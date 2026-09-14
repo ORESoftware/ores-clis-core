@@ -3,6 +3,30 @@ use std::str::FromStr;
 
 use crate::{CliPolicy, ColorMode, LogLevel, OutputMode};
 
+impl ColorMode {
+    /// Canonical lowercase spelling for config, diagnostics, and wire values.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Always => "always",
+            Self::Never => "never",
+        }
+    }
+}
+
+impl OutputMode {
+    /// Canonical lowercase spelling for config, diagnostics, and wire values.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Human => "human",
+            Self::Json => "json",
+        }
+    }
+}
+
 /// Result of parsing only the shared ORESoftware CLI policy flags.
 ///
 /// Arguments not owned by the shared policy layer are preserved verbatim in
@@ -93,6 +117,25 @@ where
             break;
         }
 
+        if let Some(value) = token.strip_prefix("--color=") {
+            let parsed = parse_value::<ColorMode>("--color", value)?;
+            set_explicit(&mut explicit_color, parsed, value, "color")?;
+            index += 1;
+            continue;
+        }
+        if let Some(value) = token.strip_prefix("--output=") {
+            let parsed = parse_value::<OutputMode>("--output", value)?;
+            set_explicit(&mut explicit_output, parsed, value, "output")?;
+            index += 1;
+            continue;
+        }
+        if let Some(value) = token.strip_prefix("--log-level=") {
+            let parsed = parse_value::<LogLevel>("--log-level", value)?;
+            set_explicit(&mut explicit_log_level, parsed, value, "log-level")?;
+            index += 1;
+            continue;
+        }
+
         match token.as_str() {
             "--color" => set_explicit(
                 &mut explicit_color,
@@ -146,32 +189,7 @@ where
                         flag: "--log-level",
                     })?;
                 let parsed = parse_value::<LogLevel>("--log-level", value)?;
-                set_explicit(
-                    &mut explicit_log_level,
-                    parsed,
-                    value,
-                    "log-level",
-                )?;
-            }
-            _ if token.starts_with("--color=") => {
-                let value = token.trim_start_matches("--color=");
-                let parsed = parse_value::<ColorMode>("--color", value)?;
-                set_explicit(&mut explicit_color, parsed, value, "color")?;
-            }
-            _ if token.starts_with("--output=") => {
-                let value = token.trim_start_matches("--output=");
-                let parsed = parse_value::<OutputMode>("--output", value)?;
-                set_explicit(&mut explicit_output, parsed, value, "output")?;
-            }
-            _ if token.starts_with("--log-level=") => {
-                let value = token.trim_start_matches("--log-level=");
-                let parsed = parse_value::<LogLevel>("--log-level", value)?;
-                set_explicit(
-                    &mut explicit_log_level,
-                    parsed,
-                    value,
-                    "log-level",
-                )?;
+                set_explicit(&mut explicit_log_level, parsed, value, "log-level")?;
             }
             _ => passthrough.push(token.clone()),
         }
@@ -239,6 +257,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn canonical_spellings_are_lowercase() {
+        assert_eq!(ColorMode::Auto.as_str(), "auto");
+        assert_eq!(ColorMode::Always.as_str(), "always");
+        assert_eq!(ColorMode::Never.as_str(), "never");
+        assert_eq!(OutputMode::Auto.as_str(), "auto");
+        assert_eq!(OutputMode::Human.as_str(), "human");
+        assert_eq!(OutputMode::Json.as_str(), "json");
+        assert_eq!(LogLevel::Trace.as_str(), "trace");
+    }
+
+    #[test]
     fn parses_all_canonical_shared_flags() {
         let parsed = parse_shared_argv([
             "--color=always",
@@ -287,13 +316,25 @@ mod tests {
     #[test]
     fn contradictory_output_flags_fail_deterministically() {
         let error = parse_shared_argv(["--json", "--no-json"]).unwrap_err();
-        assert!(matches!(error, SharedArgError::Conflict { field: "output", .. }));
+        assert!(matches!(
+            error,
+            SharedArgError::Conflict {
+                field: "output",
+                ..
+            }
+        ));
     }
 
     #[test]
     fn contradictory_color_flags_fail_deterministically() {
         let error = parse_shared_argv(["--color", "--no-color"]).unwrap_err();
-        assert!(matches!(error, SharedArgError::Conflict { field: "color", .. }));
+        assert!(matches!(
+            error,
+            SharedArgError::Conflict {
+                field: "color",
+                ..
+            }
+        ));
     }
 
     #[test]
