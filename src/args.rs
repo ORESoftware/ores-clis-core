@@ -164,36 +164,17 @@ where
         }
 
         match token.as_str() {
-            "--color" => set_explicit(
-                &mut explicit_color,
-                ColorMode::Always,
-                token,
-                "color",
-            )?,
-            "--no-color" | "--!color" => set_explicit(
-                &mut explicit_color,
-                ColorMode::Never,
-                token,
-                "color",
-            )?,
-            "--json" => set_explicit(
-                &mut explicit_output,
-                OutputMode::Json,
-                token,
-                "output",
-            )?,
-            "--no-json" | "--!json" => set_explicit(
-                &mut explicit_output,
-                OutputMode::Human,
-                token,
-                "output",
-            )?,
-            "--quiet" => set_explicit(
-                &mut explicit_log_level,
-                LogLevel::Quiet,
-                token,
-                "log-level",
-            )?,
+            "--color" => set_explicit(&mut explicit_color, ColorMode::Always, token, "color")?,
+            "--no-color" | "--!color" => {
+                set_explicit(&mut explicit_color, ColorMode::Never, token, "color")?
+            }
+            "--json" => set_explicit(&mut explicit_output, OutputMode::Json, token, "output")?,
+            "--no-json" | "--!json" => {
+                set_explicit(&mut explicit_output, OutputMode::Human, token, "output")?
+            }
+            "--quiet" => {
+                set_explicit(&mut explicit_log_level, LogLevel::Quiet, token, "log-level")?
+            }
             "--silent" => set_explicit(
                 &mut explicit_log_level,
                 LogLevel::Silent,
@@ -210,18 +191,11 @@ where
             }
             "--log-level" => {
                 index += 1;
-                let value = tokens
-                    .get(index)
-                    .ok_or(SharedArgError::MissingValue {
-                        flag: "--log-level",
-                    })?;
+                let value = tokens.get(index).ok_or(SharedArgError::MissingValue {
+                    flag: "--log-level",
+                })?;
                 let parsed = parse_value::<LogLevel>("--log-level", value)?;
-                set_explicit(
-                    &mut explicit_log_level,
-                    parsed,
-                    value,
-                    "log-level",
-                )?;
+                set_explicit(&mut explicit_log_level, parsed, value, "log-level")?;
             }
             _ => passthrough.push(token.clone()),
         }
@@ -308,13 +282,8 @@ mod tests {
 
     #[test]
     fn parses_all_canonical_shared_flags_and_marks_them_explicit() {
-        let parsed = parse_shared_argv([
-            "--color=always",
-            "--json",
-            "--log-level=trace",
-            "status",
-        ])
-        .unwrap();
+        let parsed =
+            parse_shared_argv(["--color=always", "--json", "--log-level=trace", "status"]).unwrap();
 
         assert_eq!(parsed.policy.color, ColorMode::Always);
         assert_eq!(parsed.policy.output, OutputMode::Json);
@@ -392,10 +361,7 @@ mod tests {
         let error = parse_shared_argv(["--color", "--no-color"]).unwrap_err();
         assert!(matches!(
             error,
-            SharedArgError::Conflict {
-                field: "color",
-                ..
-            }
+            SharedArgError::Conflict { field: "color", .. }
         ));
     }
 
