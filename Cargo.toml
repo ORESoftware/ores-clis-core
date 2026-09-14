@@ -1,0 +1,26 @@
+[package]
+name = "ores-clis-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Shared terminal, color, log-level, structured-output, and streaming policy for ORESoftware Rust CLIs"
+repository = "https://github.com/ORESoftware/ores-clis-core"
+readme = "README.md"
+keywords = ["cli", "terminal", "logging", "json", "opentelemetry"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "ores_clis_core"
+path = "src/lib.rs"
+
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"
+pedantic = "allow"
+nursery = "allow"
