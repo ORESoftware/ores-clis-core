@@ -1,0 +1,16 @@
+{
+  "output_mode": "human",
+  "color_stdout": true,
+  "color_stderr": true,
+  "log_level": "info",
+  "flush_each_record": true,
+  "terminal_state": {
+    "stdin_tty": true,
+    "stdout_tty": true,
+    "stderr_tty": true
+  },
+  "environment_hints": {
+    "no_color": false,
+    "force_color": false
+  }
+}
