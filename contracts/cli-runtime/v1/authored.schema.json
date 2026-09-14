@@ -7,6 +7,10 @@
       "type": "string",
       "enum": ["auto", "human", "json"]
     },
+    "ResolvedOutputMode": {
+      "type": "string",
+      "enum": ["human", "json"]
+    },
     "ColorMode": {
       "type": "string",
       "enum": ["auto", "always", "never"]
@@ -57,7 +61,7 @@
         "environment_hints"
       ],
       "properties": {
-        "output_mode": {"$ref": "#/$defs/OutputMode"},
+        "output_mode": {"$ref": "#/$defs/ResolvedOutputMode"},
         "color_stdout": {"type": "boolean"},
         "color_stderr": {"type": "boolean"},
         "log_level": {"$ref": "#/$defs/LogLevel"},
