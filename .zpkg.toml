@@ -1,0 +1,34 @@
+[package]
+org = "oresoftware"
+name = "ores-clis-core"
+version = "0.1.0"
+description = "Shared Rust CLI runtime policy for terminal-aware output, color, log levels, and streaming"
+license = "MIT"
+language = "rust"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/ORESoftware/ores-clis-core"
+
+[dependencies]
+"oresoftware/ores-interfaces" = "^0.1.0"
+"oresoftware/typespec-json-schema-validator" = "^0.1.0"
+
+[build]
+command = "cargo build --release --locked"
+outputs = ["target/release/libores_clis_core.rlib", "contracts"]
+
+[install]
+dir = ".vendor/.zed"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = ["target/**", ".vendor/.zed/**", ".typespec-json-schema-validator/**", "tmp/**", "**/*.log"]
+
+[publish.native]
+registry = "crates-io"
+package = "ores-clis-core"
+
+[scripts]
+test = "cargo test --all-targets --locked && tjsv contract --typespec contracts/cli-runtime/v1/main.tsp --schema contracts/cli-runtime/v1/authored.schema.json --report .typespec-json-schema-validator/cli-runtime-v1/report.json"
