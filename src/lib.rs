@@ -131,6 +131,58 @@ impl FromStr for LogLevel {
     }
 }
 
+/// Semantic terminal color roles shared across ORESoftware CLIs.
+///
+/// Consumers choose a role rather than a literal ANSI sequence so the palette
+/// can evolve centrally without changing command semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorRole {
+    /// Successful/healthy state.
+    Success,
+    /// Warning or degraded state.
+    Warning,
+    /// Error or failed state.
+    Error,
+    /// Informational labels and values.
+    Info,
+    /// Debug diagnostics.
+    Debug,
+    /// High-volume trace diagnostics.
+    Trace,
+    /// Headings and important labels.
+    Emphasis,
+    /// Secondary/de-emphasized text.
+    Muted,
+}
+
+impl ColorRole {
+    const fn ansi_prefix(self) -> &'static str {
+        match self {
+            Self::Success => "\u{1b}[32m",
+            Self::Warning => "\u{1b}[33m",
+            Self::Error => "\u{1b}[31m",
+            Self::Info => "\u{1b}[36m",
+            Self::Debug => "\u{1b}[35m",
+            Self::Trace => "\u{1b}[2m",
+            Self::Emphasis => "\u{1b}[1m",
+            Self::Muted => "\u{1b}[2m",
+        }
+    }
+}
+
+/// Render a semantic role with ANSI escapes when color is enabled.
+///
+/// This intentionally owns only styling, not output routing. Callers decide
+/// whether to pass `RuntimePolicy::color_stdout()` or `color_stderr()`.
+#[must_use]
+pub fn paint(enabled: bool, role: ColorRole, value: impl fmt::Display) -> String {
+    if enabled {
+        format!("{}{}\u{1b}[0m", role.ansi_prefix(), value)
+    } else {
+        value.to_string()
+    }
+}
+
 /// Immutable terminal capabilities captured once at process startup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalState {
@@ -245,13 +297,19 @@ impl RuntimePolicy {
         matches!(self.output, OutputMode::Json)
     }
 
-    /// Whether color is allowed on stdout.
+    /// Whether color is allowed on primary stdout.
     #[must_use]
     pub fn color_stdout(self) -> bool {
-        self.color_for_stream(self.terminals.stdout_tty)
+        // Structured stdout is a wire format. Never inject ANSI escapes into it,
+        // even if the caller passed --color/--color=always.
+        !self.json() && self.color_for_stream(self.terminals.stdout_tty)
     }
 
-    /// Whether color is allowed on stderr.
+    /// Whether color is allowed on stderr diagnostics.
+    ///
+    /// Stderr is intentionally independent from stdout's structured output
+    /// mode, so `tool | jq` can retain colored diagnostics on an attached
+    /// terminal without corrupting the JSON pipe.
     #[must_use]
     pub fn color_stderr(self) -> bool {
         self.color_for_stream(self.terminals.stderr_tty)
@@ -264,12 +322,6 @@ impl RuntimePolicy {
     }
 
     fn color_for_stream(self, stream_tty: bool) -> bool {
-        // Structured output is a wire format. Never inject ANSI escapes into it,
-        // even if the caller passed --color/--color=always.
-        if self.json() {
-            return false;
-        }
-
         match self.color {
             ColorMode::Never => false,
             ColorMode::Always => true,
@@ -405,15 +457,15 @@ mod tests {
     }
 
     #[test]
-    fn redirected_json_never_contains_color_even_when_forced() {
+    fn json_stdout_is_ansi_free_but_tty_stderr_can_stay_colored() {
         let runtime = CliPolicy {
             output: OutputMode::Json,
             color: ColorMode::Always,
             log_level: LogLevel::Trace,
         }
-        .resolve(tty(true, true), EnvironmentHints::default());
+        .resolve(tty(false, true), EnvironmentHints::default());
         assert!(!runtime.color_stdout());
-        assert!(!runtime.color_stderr());
+        assert!(runtime.color_stderr());
     }
 
     #[test]
@@ -447,6 +499,12 @@ mod tests {
         assert!(!LogLevel::Quiet.allows(LogLevel::Warn));
         assert!(LogLevel::Error.allows(LogLevel::Error));
         assert!(!LogLevel::Error.allows(LogLevel::Warn));
+    }
+
+    #[test]
+    fn semantic_palette_is_zero_cost_when_disabled() {
+        assert_eq!(paint(false, ColorRole::Success, "ok"), "ok");
+        assert_eq!(paint(true, ColorRole::Error, "boom"), "\u{1b}[31mboom\u{1b}[0m");
     }
 
     #[test]
