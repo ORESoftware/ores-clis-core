@@ -17,7 +17,7 @@ enum ResolvedOutputMode {
 enum ColorMode {
   auto,
   always,
-  never,
+  Never: "never",
 }
 
 /** Shared log threshold in increasing verbosity order. */
