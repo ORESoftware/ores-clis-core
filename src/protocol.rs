@@ -119,9 +119,7 @@ impl<W: Write> ProtocolEmitter<W> {
         Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             match required {
-                StreamRole::Primary => {
-                    "primary command results must use the primary/stdout stream"
-                }
+                StreamRole::Primary => "primary command results must use the primary/stdout stream",
                 StreamRole::Diagnostics => {
                     "diagnostics and progress must use the diagnostics/stderr stream"
                 }
@@ -221,13 +219,19 @@ mod tests {
     #[test]
     fn primary_machine_records_are_ansi_free_and_single_line() {
         let mut emitter = ProtocolEmitter::new(Vec::<u8>::new(), StreamRole::Primary);
-        emitter.emit_primary_machine_record("{\"ok\":true}").unwrap();
-        assert!(emitter
-            .emit_primary_machine_record("\u{1b}[31m{\"ok\":false}")
-            .is_err());
-        assert!(emitter
-            .emit_primary_machine_record("{\"bad\":\"literal\nnewline\"}")
-            .is_err());
+        emitter
+            .emit_primary_machine_record("{\"ok\":true}")
+            .unwrap();
+        assert!(
+            emitter
+                .emit_primary_machine_record("\u{1b}[31m{\"ok\":false}")
+                .is_err()
+        );
+        assert!(
+            emitter
+                .emit_primary_machine_record("{\"bad\":\"literal\nnewline\"}")
+                .is_err()
+        );
     }
 
     #[test]
@@ -235,11 +239,12 @@ mod tests {
         let mut primary = ProtocolEmitter::new(Vec::<u8>::new(), StreamRole::Primary);
         assert!(primary.emit_diagnostic_line("progress 1/2").is_err());
 
-        let mut diagnostics =
-            ProtocolEmitter::new(Vec::<u8>::new(), StreamRole::Diagnostics);
-        assert!(diagnostics
-            .emit_primary_machine_record("{\"ok\":true}")
-            .is_err());
+        let mut diagnostics = ProtocolEmitter::new(Vec::<u8>::new(), StreamRole::Diagnostics);
+        assert!(
+            diagnostics
+                .emit_primary_machine_record("{\"ok\":true}")
+                .is_err()
+        );
     }
 
     #[test]
