@@ -1,0 +1,5 @@
+{
+  "$comment": "Independent peer authorities. ores-interfaces supplies the cross-repository interface lineage; typespec-json-schema-validator owns semantic parity checking. Generated schemas are evidence, not authority.",
+  "typespec": "main.tsp",
+  "jsonSchema": "authored.schema.json"
+}
