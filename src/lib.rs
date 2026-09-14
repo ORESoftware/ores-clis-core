@@ -31,7 +31,11 @@ impl FromStr for ColorMode {
             "auto" => Ok(Self::Auto),
             "always" | "on" | "true" | "yes" | "1" => Ok(Self::Always),
             "never" | "off" | "false" | "no" | "0" => Ok(Self::Never),
-            _ => Err(ParsePolicyError::new("color", value, "auto, always, or never")),
+            _ => Err(ParsePolicyError::new(
+                "color",
+                value,
+                "auto, always, or never",
+            )),
         }
     }
 }
@@ -56,7 +60,11 @@ impl FromStr for OutputMode {
             "auto" => Ok(Self::Auto),
             "human" | "plain" | "text" => Ok(Self::Human),
             "json" | "ndjson" | "structured" => Ok(Self::Json),
-            _ => Err(ParsePolicyError::new("output", value, "auto, human, or json")),
+            _ => Err(ParsePolicyError::new(
+                "output",
+                value,
+                "auto, human, or json",
+            )),
         }
     }
 }
@@ -440,11 +448,15 @@ mod tests {
     fn auto_output_is_human_on_tty_and_json_when_piped() {
         let policy = CliPolicy::default();
         assert_eq!(
-            policy.resolve(tty(true, true), EnvironmentHints::default()).output_mode(),
+            policy
+                .resolve(tty(true, true), EnvironmentHints::default())
+                .output_mode(),
             OutputMode::Human
         );
         assert_eq!(
-            policy.resolve(tty(false, false), EnvironmentHints::default()).output_mode(),
+            policy
+                .resolve(tty(false, false), EnvironmentHints::default())
+                .output_mode(),
             OutputMode::Json
         );
     }
@@ -504,7 +516,10 @@ mod tests {
     #[test]
     fn semantic_palette_is_zero_cost_when_disabled() {
         assert_eq!(paint(false, ColorRole::Success, "ok"), "ok");
-        assert_eq!(paint(true, ColorRole::Error, "boom"), "\u{1b}[31mboom\u{1b}[0m");
+        assert_eq!(
+            paint(true, ColorRole::Error, "boom"),
+            "\u{1b}[31mboom\u{1b}[0m"
+        );
     }
 
     #[test]
