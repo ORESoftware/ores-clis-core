@@ -12,7 +12,7 @@ categories = ["command-line-utilities", "development-tools"]
 
 [lib]
 name = "ores_clis_core"
-path = "src/lib.rs"
+path = "src/root.rs"
 
 [dependencies]
 
