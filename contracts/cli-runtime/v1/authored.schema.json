@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.oresoftware.dev/cli-runtime/v1/authored.schema.json",
+  "title": "OresCliRuntime.V1",
+  "$defs": {
+    "OutputMode": {
+      "type": "string",
+      "enum": ["auto", "human", "json"]
+    },
+    "ColorMode": {
+      "type": "string",
+      "enum": ["auto", "always", "never"]
+    },
+    "LogLevel": {
+      "type": "string",
+      "enum": ["silent", "quiet", "error", "warn", "info", "debug", "trace"]
+    },
+    "TerminalState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stdin_tty", "stdout_tty", "stderr_tty"],
+      "properties": {
+        "stdin_tty": {"type": "boolean"},
+        "stdout_tty": {"type": "boolean"},
+        "stderr_tty": {"type": "boolean"}
+      }
+    },
+    "EnvironmentHints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["no_color", "force_color"],
+      "properties": {
+        "no_color": {"type": "boolean"},
+        "force_color": {"type": "boolean"}
+      }
+    },
+    "CliPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["output_mode", "color_mode", "log_level"],
+      "properties": {
+        "output_mode": {"$ref": "#/$defs/OutputMode"},
+        "color_mode": {"$ref": "#/$defs/ColorMode"},
+        "log_level": {"$ref": "#/$defs/LogLevel"}
+      }
+    },
+    "ResolvedCliPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_mode",
+        "color_stdout",
+        "color_stderr",
+        "log_level",
+        "flush_each_record",
+        "terminal_state",
+        "environment_hints"
+      ],
+      "properties": {
+        "output_mode": {"$ref": "#/$defs/OutputMode"},
+        "color_stdout": {"type": "boolean"},
+        "color_stderr": {"type": "boolean"},
+        "log_level": {"$ref": "#/$defs/LogLevel"},
+        "flush_each_record": {"type": "boolean"},
+        "terminal_state": {"$ref": "#/$defs/TerminalState"},
+        "environment_hints": {"$ref": "#/$defs/EnvironmentHints"}
+      }
+    }
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/CliPolicy"},
+    {"$ref": "#/$defs/ResolvedCliPolicy"}
+  ]
+}
