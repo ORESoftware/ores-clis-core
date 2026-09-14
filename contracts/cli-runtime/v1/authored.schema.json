@@ -67,8 +67,5 @@
       }
     }
   },
-  "oneOf": [
-    {"$ref": "#/$defs/CliPolicy"},
-    {"$ref": "#/$defs/ResolvedCliPolicy"}
-  ]
+  "$ref": "#/$defs/ResolvedCliPolicy"
 }
