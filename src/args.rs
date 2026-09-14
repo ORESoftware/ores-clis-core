@@ -71,17 +71,26 @@ impl ParsedSharedArgs {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SharedArgError {
     /// A flag requiring a following token did not receive one.
-    MissingValue { flag: &'static str },
+    MissingValue {
+        /// Canonical shared flag whose value was omitted.
+        flag: &'static str,
+    },
     /// A shared value failed canonical parsing.
     InvalidValue {
+        /// Canonical shared flag whose value was invalid.
         flag: &'static str,
+        /// User-provided value that failed parsing.
         value: String,
+        /// Parser diagnostic describing the accepted value domain.
         message: String,
     },
     /// Multiple explicit choices for one field disagreed.
     Conflict {
+        /// Logical policy field for which explicit choices conflicted.
         field: &'static str,
+        /// First explicit spelling observed for the field.
         first: String,
+        /// Later contradictory spelling observed for the field.
         second: String,
     },
 }
