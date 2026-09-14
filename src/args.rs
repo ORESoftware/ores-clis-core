@@ -38,6 +38,33 @@ pub struct ParsedSharedArgs {
     pub policy: CliPolicy,
     /// Arguments that remain for the consumer CLI parser.
     pub passthrough: Vec<String>,
+    explicit_output: bool,
+    explicit_color: bool,
+    explicit_log_level: bool,
+}
+
+impl ParsedSharedArgs {
+    /// Whether argv explicitly selected the primary output mode.
+    ///
+    /// This is intentionally separate from the value because an explicit
+    /// `--output=auto` or `--log-level=info` can equal a default while still
+    /// needing to outrank an environment-derived consumer value.
+    #[must_use]
+    pub const fn output_was_explicit(&self) -> bool {
+        self.explicit_output
+    }
+
+    /// Whether argv explicitly selected color behavior.
+    #[must_use]
+    pub const fn color_was_explicit(&self) -> bool {
+        self.explicit_color
+    }
+
+    /// Whether argv explicitly selected the log threshold.
+    #[must_use]
+    pub const fn log_level_was_explicit(&self) -> bool {
+        self.explicit_log_level
+    }
 }
 
 /// Deterministic parse/conflict failure for shared CLI flags.
@@ -189,13 +216,22 @@ where
                         flag: "--log-level",
                     })?;
                 let parsed = parse_value::<LogLevel>("--log-level", value)?;
-                set_explicit(&mut explicit_log_level, parsed, value, "log-level")?;
+                set_explicit(
+                    &mut explicit_log_level,
+                    parsed,
+                    value,
+                    "log-level",
+                )?;
             }
             _ => passthrough.push(token.clone()),
         }
 
         index += 1;
     }
+
+    let output_was_explicit = explicit_output.is_some();
+    let color_was_explicit = explicit_color.is_some();
+    let log_level_was_explicit = explicit_log_level.is_some();
 
     let mut policy = CliPolicy::default();
     if let Some((output, _)) = explicit_output {
@@ -211,6 +247,9 @@ where
     Ok(ParsedSharedArgs {
         policy,
         passthrough,
+        explicit_output: output_was_explicit,
+        explicit_color: color_was_explicit,
+        explicit_log_level: log_level_was_explicit,
     })
 }
 
@@ -268,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_all_canonical_shared_flags() {
+    fn parses_all_canonical_shared_flags_and_marks_them_explicit() {
         let parsed = parse_shared_argv([
             "--color=always",
             "--json",
@@ -280,7 +319,30 @@ mod tests {
         assert_eq!(parsed.policy.color, ColorMode::Always);
         assert_eq!(parsed.policy.output, OutputMode::Json);
         assert_eq!(parsed.policy.log_level, LogLevel::Trace);
+        assert!(parsed.color_was_explicit());
+        assert!(parsed.output_was_explicit());
+        assert!(parsed.log_level_was_explicit());
         assert_eq!(parsed.passthrough, vec!["status"]);
+    }
+
+    #[test]
+    fn explicit_default_values_remain_distinguishable_from_implicit_defaults() {
+        let implicit = parse_shared_argv(["status"]).unwrap();
+        assert!(!implicit.output_was_explicit());
+        assert!(!implicit.color_was_explicit());
+        assert!(!implicit.log_level_was_explicit());
+
+        let explicit = parse_shared_argv([
+            "--output=auto",
+            "--color=auto",
+            "--log-level=info",
+            "status",
+        ])
+        .unwrap();
+        assert_eq!(explicit.policy, CliPolicy::default());
+        assert!(explicit.output_was_explicit());
+        assert!(explicit.color_was_explicit());
+        assert!(explicit.log_level_was_explicit());
     }
 
     #[test]
