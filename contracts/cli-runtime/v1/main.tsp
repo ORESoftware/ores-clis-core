@@ -7,6 +7,12 @@ enum OutputMode {
   json,
 }
 
+/** Primary stdout selection after terminal resolution. */
+enum ResolvedOutputMode {
+  human,
+  json,
+}
+
 /** Human-readable color preference. JSON output is always ANSI-free. */
 enum ColorMode {
   auto,
@@ -47,7 +53,7 @@ model CliPolicy {
 
 /** Resolved runtime state after terminal/environment policy is applied. */
 model ResolvedCliPolicy {
-  output_mode: OutputMode;
+  output_mode: ResolvedOutputMode;
   color_stdout: boolean;
   color_stderr: boolean;
   log_level: LogLevel;
