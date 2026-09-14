@@ -14,7 +14,5 @@ pub use runtime::*;
 mod args;
 mod protocol;
 
-pub use args::{parse_shared_argv, ParsedSharedArgs, SharedArgError};
-pub use protocol::{
-    top_level_io, EmitDisposition, FlushPolicy, ProtocolEmitter, StreamRole,
-};
+pub use args::{ParsedSharedArgs, SharedArgError, parse_shared_argv};
+pub use protocol::{EmitDisposition, FlushPolicy, ProtocolEmitter, StreamRole, top_level_io};
