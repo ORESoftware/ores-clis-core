@@ -73,6 +73,7 @@ jobs:
         with:
           typespec: contracts/cli-runtime/v1/main.tsp
           schema: contracts/cli-runtime/v1/authored.schema.json
+          instances: contracts/cli-runtime/v1/instances
           report: .contract/tjsv-report.json
           contract_ir: .contract/tjsv-contract-ir.json
           output_dir: .contract/generated
