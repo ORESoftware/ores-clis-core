@@ -1,0 +1,16 @@
+{
+  "output_mode": "json",
+  "color_stdout": false,
+  "color_stderr": false,
+  "log_level": "verbose",
+  "flush_each_record": true,
+  "terminal_state": {
+    "stdin_tty": false,
+    "stdout_tty": false,
+    "stderr_tty": false
+  },
+  "environment_hints": {
+    "no_color": false,
+    "force_color": false
+  }
+}
