@@ -85,9 +85,10 @@ impl<W: Write> ProtocolEmitter<W> {
 
     /// Emit one machine-readable JSON/NDJSON record on the primary stream.
     ///
-    /// Literal ANSI escapes and literal CR/LF characters are rejected. JSON
-    /// strings containing escaped `\\n` remain valid because they do not contain
-    /// a literal newline byte.
+    /// The record must be one valid JSON value. Literal ANSI/control sequences
+    /// and literal CR/LF framing bytes are rejected before writing. JSON strings
+    /// containing escaped `\\n` remain valid because they contain no literal
+    /// newline byte on the wire.
     pub fn emit_primary_machine_record(&mut self, value: &str) -> io::Result<()> {
         self.require_role(StreamRole::Primary)?;
         validate_machine_record(value)?;
@@ -144,12 +145,27 @@ fn validate_machine_record(value: &str) -> io::Result<()> {
             "machine output must not contain ANSI escape sequences",
         ));
     }
+    if value.chars().any(|character| {
+        let code = character as u32;
+        (0x80..=0x9f).contains(&code)
+    }) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "machine output must not contain raw C1 terminal control characters",
+        ));
+    }
     if value.contains('\n') || value.contains('\r') {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "one machine record must not contain literal CR/LF framing bytes",
         ));
     }
+    serde_json::from_str::<serde_json::Value>(value).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("machine record must be one valid JSON value: {error}"),
+        )
+    })?;
     Ok(())
 }
 
@@ -217,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn primary_machine_records_are_ansi_free_and_single_line() {
+    fn primary_machine_records_are_ansi_free_single_line_json() {
         let mut emitter = ProtocolEmitter::new(Vec::<u8>::new(), StreamRole::Primary);
         emitter
             .emit_primary_machine_record("{\"ok\":true}")
@@ -232,6 +248,20 @@ mod tests {
                 .emit_primary_machine_record("{\"bad\":\"literal\nnewline\"}")
                 .is_err()
         );
+        assert!(emitter.emit_primary_machine_record("not-json").is_err());
+        assert!(
+            emitter
+                .emit_primary_machine_record("{\"ok\":true}\u{009b}31m")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn valid_json_primitives_are_still_valid_machine_records() {
+        let mut emitter = ProtocolEmitter::new(Vec::<u8>::new(), StreamRole::Primary);
+        for record in ["null", "true", "42", "\"value\"", "[]"] {
+            emitter.emit_primary_machine_record(record).unwrap();
+        }
     }
 
     #[test]
