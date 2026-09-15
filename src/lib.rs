@@ -203,45 +203,90 @@ pub struct TerminalState {
 }
 
 impl TerminalState {
+    /// Construct a terminal snapshot from already-captured stream facts.
+    ///
+    /// This is useful for adapters and deterministic process-boundary tests that
+    /// must not re-probe ambient stdio after admission.
+    #[must_use]
+    pub const fn new(stdin_tty: bool, stdout_tty: bool, stderr_tty: bool) -> Self {
+        Self {
+            stdin_tty,
+            stdout_tty,
+            stderr_tty,
+        }
+    }
+
     /// Detect terminal state using stable `std::io::IsTerminal`.
     #[must_use]
     pub fn detect() -> Self {
-        Self {
-            stdin_tty: io::stdin().is_terminal(),
-            stdout_tty: io::stdout().is_terminal(),
-            stderr_tty: io::stderr().is_terminal(),
-        }
+        Self::new(
+            io::stdin().is_terminal(),
+            io::stdout().is_terminal(),
+            io::stderr().is_terminal(),
+        )
     }
 }
 
 /// Relevant environment hints for cross-tool CLI behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct EnvironmentHints {
-    /// `NO_COLOR` is present in the process environment.
+    /// A conventional environment signal requests no color.
     pub no_color: bool,
     /// `CLICOLOR_FORCE` or `FORCE_COLOR` requests color when nonzero/nonempty.
     pub force_color: bool,
 }
 
 impl EnvironmentHints {
+    /// Resolve color hints from already-captured environment values.
+    ///
+    /// `NO_COLOR` is presence-based. `CLICOLOR=0` and `TERM=dumb` are treated
+    /// as no-color signals. Force-color values use the same falsey vocabulary
+    /// as the ambient detector. A no-color signal wins over force color when
+    /// `ColorMode::Auto` is resolved.
+    #[must_use]
+    pub fn from_values(
+        no_color_present: bool,
+        clicolor: Option<&str>,
+        clicolor_force: Option<&str>,
+        force_color: Option<&str>,
+        term: Option<&str>,
+    ) -> Self {
+        let clicolor_disables = clicolor.is_some_and(value_falsey);
+        let dumb_terminal = term.is_some_and(|value| value.trim().eq_ignore_ascii_case("dumb"));
+        Self {
+            no_color: no_color_present || clicolor_disables || dumb_terminal,
+            force_color: clicolor_force.is_some_and(value_truthy)
+                || force_color.is_some_and(value_truthy),
+        }
+    }
+
     /// Read conventional color environment variables.
     #[must_use]
     pub fn detect() -> Self {
-        Self {
-            no_color: env::var_os("NO_COLOR").is_some(),
-            force_color: env_truthy("CLICOLOR_FORCE") || env_truthy("FORCE_COLOR"),
-        }
+        let clicolor = env::var("CLICOLOR").ok();
+        let clicolor_force = env::var("CLICOLOR_FORCE").ok();
+        let force_color = env::var("FORCE_COLOR").ok();
+        let term = env::var("TERM").ok();
+        Self::from_values(
+            env::var_os("NO_COLOR").is_some(),
+            clicolor.as_deref(),
+            clicolor_force.as_deref(),
+            force_color.as_deref(),
+            term.as_deref(),
+        )
     }
 }
 
-fn env_truthy(name: &str) -> bool {
-    env::var(name)
-        .ok()
-        .map(|value| {
-            let value = value.trim().to_ascii_lowercase();
-            !value.is_empty() && !matches!(value.as_str(), "0" | "false" | "no" | "off")
-        })
-        .unwrap_or(false)
+fn value_truthy(value: &str) -> bool {
+    let value = value.trim().to_ascii_lowercase();
+    !value.is_empty() && !matches!(value.as_str(), "0" | "false" | "no" | "off")
+}
+
+fn value_falsey(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "0" | "false" | "no" | "off"
+    )
 }
 
 /// Parser-agnostic user preferences. `--color` maps to `Always`, `--no-color`
@@ -293,10 +338,28 @@ impl RuntimePolicy {
         self.output
     }
 
+    /// Requested color mode retained by the resolved policy.
+    #[must_use]
+    pub const fn color_mode(self) -> ColorMode {
+        self.color
+    }
+
     /// Resolved log level.
     #[must_use]
     pub const fn log_level(self) -> LogLevel {
         self.log_level
+    }
+
+    /// Immutable terminal evidence used during policy resolution.
+    #[must_use]
+    pub const fn terminal_state(self) -> TerminalState {
+        self.terminals
+    }
+
+    /// Immutable environment hints used during policy resolution.
+    #[must_use]
+    pub const fn environment_hints(self) -> EnvironmentHints {
+        self.env
     }
 
     /// Whether primary stdout should be structured JSON/NDJSON.
@@ -364,20 +427,24 @@ impl<W: Write> StreamEmitter<W> {
         self
     }
 
+    /// Whether each record is flushed immediately.
+    #[must_use]
+    pub const fn flushes_each_record(&self) -> bool {
+        self.flush_each_record
+    }
+
     /// Write one human-readable record and terminate it with `\n`.
     pub fn emit_line(&mut self, value: &str) -> io::Result<()> {
         self.write_line(value)
     }
 
-    /// Write one JSON/NDJSON record, rejecting ANSI escapes to keep the wire
-    /// stream machine-safe.
+    /// Write one JSON/NDJSON record.
+    ///
+    /// The value must be exactly one valid JSON text and may not contain raw
+    /// record separators, ANSI ESC, or C1 control characters. Escaped JSON
+    /// control sequences remain valid because they do not break line framing.
     pub fn emit_json_line(&mut self, value: &str) -> io::Result<()> {
-        if value.contains('\u{1b}') {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "JSON output must not contain ANSI escape sequences",
-            ));
-        }
+        validate_json_record(value)?;
         self.write_line(value)
     }
 
@@ -386,7 +453,13 @@ impl<W: Write> StreamEmitter<W> {
         self.writer.flush()
     }
 
-    /// Recover the wrapped writer.
+    /// Flush pending bytes and recover the wrapped writer.
+    pub fn finish(mut self) -> io::Result<W> {
+        self.writer.flush()?;
+        Ok(self.writer)
+    }
+
+    /// Recover the wrapped writer without adding an implicit flush.
     #[must_use]
     pub fn into_inner(self) -> W {
         self.writer
@@ -400,6 +473,34 @@ impl<W: Write> StreamEmitter<W> {
         }
         Ok(())
     }
+}
+
+fn validate_json_record(value: &str) -> io::Result<()> {
+    if value.contains('\u{1b}') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "JSON output must not contain ANSI escape sequences",
+        ));
+    }
+    if value.contains(['\r', '\n']) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "JSON output must be exactly one line",
+        ));
+    }
+    if value.chars().any(|character| ('\u{0080}'..='\u{009f}').contains(&character)) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "JSON output must not contain C1 control characters",
+        ));
+    }
+    serde_json::from_str::<serde_json::Value>(value).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("JSON output is not valid JSON: {error}"),
+        )
+    })?;
+    Ok(())
 }
 
 /// Error returned by a shared policy value parser.
@@ -437,11 +538,15 @@ mod tests {
     use super::*;
 
     fn tty(stdout_tty: bool, stderr_tty: bool) -> TerminalState {
-        TerminalState {
-            stdin_tty: true,
-            stdout_tty,
-            stderr_tty,
-        }
+        TerminalState::new(true, stdout_tty, stderr_tty)
+    }
+
+    #[test]
+    fn terminal_state_constructor_preserves_captured_facts() {
+        let terminals = TerminalState::new(false, true, false);
+        assert!(!terminals.stdin_tty);
+        assert!(terminals.stdout_tty);
+        assert!(!terminals.stderr_tty);
     }
 
     #[test]
@@ -498,6 +603,64 @@ mod tests {
     }
 
     #[test]
+    fn conventional_environment_hints_are_resolved_without_ambient_mutation() {
+        let no_color = EnvironmentHints::from_values(true, None, None, None, None);
+        assert!(no_color.no_color);
+        assert!(!no_color.force_color);
+
+        let clicolor_zero =
+            EnvironmentHints::from_values(false, Some("0"), None, None, None);
+        assert!(clicolor_zero.no_color);
+
+        let dumb = EnvironmentHints::from_values(false, None, None, None, Some("DuMb"));
+        assert!(dumb.no_color);
+
+        let forced = EnvironmentHints::from_values(
+            false,
+            None,
+            Some("1"),
+            Some("off"),
+            None,
+        );
+        assert!(!forced.no_color);
+        assert!(forced.force_color);
+
+        let falsey_force = EnvironmentHints::from_values(
+            false,
+            None,
+            Some("false"),
+            Some("0"),
+            None,
+        );
+        assert!(!falsey_force.force_color);
+    }
+
+    #[test]
+    fn no_color_signal_wins_over_force_color_in_auto_mode() {
+        let env = EnvironmentHints::from_values(true, None, Some("1"), None, None);
+        let runtime = CliPolicy::default().resolve(tty(true, true), env);
+        assert!(!runtime.color_stdout());
+        assert!(!runtime.color_stderr());
+    }
+
+    #[test]
+    fn resolved_policy_retains_admission_inputs_for_downstream_evidence() {
+        let terminals = TerminalState::new(false, false, true);
+        let env = EnvironmentHints::from_values(false, None, Some("1"), None, None);
+        let runtime = CliPolicy {
+            output: OutputMode::Auto,
+            color: ColorMode::Auto,
+            log_level: LogLevel::Debug,
+        }
+        .resolve(terminals, env);
+
+        assert_eq!(runtime.color_mode(), ColorMode::Auto);
+        assert_eq!(runtime.log_level(), LogLevel::Debug);
+        assert_eq!(runtime.terminal_state(), terminals);
+        assert_eq!(runtime.environment_hints(), env);
+    }
+
+    #[test]
     fn trace_and_compatibility_levels_parse() {
         assert_eq!("trace".parse::<LogLevel>().unwrap(), LogLevel::Trace);
         assert_eq!("warning".parse::<LogLevel>().unwrap(), LogLevel::Warn);
@@ -523,9 +686,51 @@ mod tests {
     }
 
     #[test]
-    fn json_emitter_rejects_ansi() {
+    fn json_emitter_requires_one_valid_machine_record() {
         let mut emitter = StreamEmitter::new(Vec::<u8>::new());
         assert!(emitter.emit_json_line("{\"ok\":true}").is_ok());
+        assert!(emitter.emit_json_line("42").is_ok());
+        assert!(emitter.emit_json_line("{not-json}").is_err());
+        assert!(emitter.emit_json_line("{}\n{}").is_err());
         assert!(emitter.emit_json_line("\u{1b}[31m{\"ok\":false}").is_err());
+        assert!(emitter.emit_json_line("\u{0085}{\"ok\":false}").is_err());
+    }
+
+    #[test]
+    fn json_emitter_allows_escaped_control_content_without_breaking_framing() {
+        let mut emitter = StreamEmitter::new(Vec::<u8>::new());
+        assert!(emitter
+            .emit_json_line("{\"message\":\"first\\nsecond\"}")
+            .is_ok());
+        let bytes = emitter.into_inner();
+        assert_eq!(bytes, b"{\"message\":\"first\\nsecond\"}\n");
+    }
+
+    #[derive(Debug, Default)]
+    struct TrackingWriter {
+        bytes: Vec<u8>,
+        flushes: usize,
+    }
+
+    impl Write for TrackingWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushes += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn stream_emitter_exposes_and_finishes_flush_policy() {
+        let mut emitter = StreamEmitter::new(TrackingWriter::default()).with_flush_each_record(false);
+        assert!(!emitter.flushes_each_record());
+        emitter.emit_line("one").unwrap();
+        let writer = emitter.finish().unwrap();
+        assert_eq!(writer.bytes, b"one\n");
+        assert_eq!(writer.flushes, 1);
     }
 }
