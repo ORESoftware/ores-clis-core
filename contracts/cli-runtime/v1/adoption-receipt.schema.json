@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.oresoftware.com/cli-runtime/v1/adoption-receipt.schema.json",
+  "title": "CLI Runtime Adoption Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "repository",
+    "binary_surfaces",
+    "runtime_contract_revision",
+    "implementation",
+    "parser_adapter",
+    "output_policy",
+    "diagnostics_stream",
+    "structured_stdout_ansi_free",
+    "broken_pipe_policy",
+    "deviations",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": { "const": "cli-runtime-adoption-v1" },
+    "repository": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+    "binary_surfaces": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "runtime_contract_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "adapter", "revision"],
+      "properties": {
+        "language": { "type": "string", "enum": ["rust", "go", "node", "dart", "other"] },
+        "adapter": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 }
+      }
+    },
+    "parser_adapter": { "type": "string", "minLength": 1 },
+    "output_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "fixed_protocol_commands"],
+      "properties": {
+        "default": { "type": "string", "enum": ["shared_auto", "human", "json", "fixed"] },
+        "fixed_protocol_commands": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "telemetry_bridge": { "type": ["string", "null"] },
+    "diagnostics_stream": { "const": "stderr" },
+    "structured_stdout_ansi_free": { "const": true },
+    "broken_pipe_policy": { "const": "consumer_closed" },
+    "deviations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "reason", "reviewed"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+          "reason": { "type": "string", "minLength": 1 },
+          "reviewed": { "type": "boolean" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["head_sha", "checks"],
+      "properties": {
+        "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
