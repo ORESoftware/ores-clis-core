@@ -1,0 +1,86 @@
+name: ores-clis-core admission
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ores-clis-core-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: rust-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact reviewed head
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup component add --toolchain 1.88.0 rustfmt clippy
+
+      - name: Format
+        shell: bash
+        run: cargo +1.88.0 fmt --all --check
+
+      - name: Clippy
+        shell: bash
+        run: cargo +1.88.0 clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        shell: bash
+        run: cargo +1.88.0 test --all-targets --all-features
+
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact reviewed head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Compare independent TypeSpec and JSON Schema authorities
+        uses: ORESoftware/typespec-json-schema-validator@1bece480626c6db52c0a9ecbe65be0ceb1172e20
+        with:
+          typespec: contracts/cli-runtime/v1/main.tsp
+          schema: contracts/cli-runtime/v1/authored.schema.json
+          instances: contracts/cli-runtime/v1/instances
+          report: .contract/tjsv-report.json
+          contract_ir: .contract/tjsv-contract-ir.json
+          output_dir: .contract/generated
+          quiet: 'false'
+
+      - name: Prove authored authorities stayed read-only
+        run: |
+          git diff --exit-code -- \
+            contracts/cli-runtime/v1/main.tsp \
+            contracts/cli-runtime/v1/authored.schema.json
