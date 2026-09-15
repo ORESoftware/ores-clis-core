@@ -72,5 +72,8 @@ fn early_stdout_consumer_close_is_clean_process_termination() {
     drop(reader);
 
     let status = child.wait().expect("wait fixture");
-    assert!(status.success(), "BrokenPipe must be treated as consumer close");
+    assert!(
+        status.success(),
+        "BrokenPipe must be treated as consumer close"
+    );
 }
