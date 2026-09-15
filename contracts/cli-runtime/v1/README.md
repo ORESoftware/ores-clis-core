@@ -25,6 +25,12 @@ The runtime invariants are:
 
 The vector file is **not** a third authority. TypeSpec and the authored Draft 2020-12 JSON Schema remain the independent peer authorities. Adapters should execute the vectors in their native runtime and report exact vector IDs; they must not regenerate either authority from the vectors or modify expected results merely to obtain green tests.
 
+## Fleet adoption receipts
+
+`adoption-receipt.schema.json` defines evidence that a consumer has integrated the runtime semantics rather than merely adding a dependency. A receipt records the repository and binaries, exact runtime-contract revision, language adapter and revision, parser boundary, default/fixed output policy, optional telemetry bridge, stderr diagnostics, ANSI-free structured stdout, BrokenPipe behavior, reviewed deviations, and exact-head check evidence.
+
+Receipts are audit metadata, not another runtime authority. A fixed-protocol command may intentionally deviate from shared automatic output selection, but the deviation must be named, justified, and marked reviewed instead of weakening the fleet rule globally. `adoption-receipt.example.json` is non-production example evidence; consumers should commit their own repository-specific receipt only after the claimed exact-head checks exist.
+
 `ores-clis-core` owns CLI runtime policy, not telemetry. `ores-otel` remains the logging/telemetry implementation authority, and `ORESoftware/ores-interfaces` remains the cross-repository shared-interface authority.
 
 Rust is the first implementation. Future language implementations must consume this contract and conformance corpus rather than defining a parallel policy vocabulary.
