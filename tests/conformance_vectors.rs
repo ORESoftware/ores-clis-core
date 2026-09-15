@@ -4,7 +4,8 @@ const VECTORS: &str = include_str!("../contracts/cli-runtime/v1/conformance-vect
 
 #[test]
 fn conformance_vectors_are_well_formed_unique_and_cover_core_boundaries() {
-    let document: serde_json::Value = serde_json::from_str(VECTORS).expect("valid JSON vector corpus");
+    let document: serde_json::Value =
+        serde_json::from_str(VECTORS).expect("valid JSON vector corpus");
     assert_eq!(document["version"], "cli-runtime-v1");
 
     let authority_note = document["authority_note"]
@@ -20,13 +21,22 @@ fn conformance_vectors_are_well_formed_unique_and_cover_core_boundaries() {
     for vector in vectors {
         let id = vector["id"].as_str().expect("every vector has an id");
         assert!(
-            id.chars()
-                .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_'),
+            id.chars().all(|character| {
+                character.is_ascii_lowercase()
+                    || character.is_ascii_digit()
+                    || character == '_'
+            }),
             "vector id must be canonical snake_case: {id}"
         );
         assert!(ids.insert(id), "duplicate conformance vector id: {id}");
-        assert!(vector["kind"].is_string(), "vector {id} must name its kind");
-        assert!(vector.get("expected").is_some(), "vector {id} needs expected evidence");
+        assert!(
+            vector["kind"].is_string(),
+            "vector {id} must name its kind"
+        );
+        assert!(
+            vector.get("expected").is_some(),
+            "vector {id} needs expected evidence"
+        );
     }
 
     for required in [
