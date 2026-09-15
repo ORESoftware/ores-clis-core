@@ -482,13 +482,16 @@ fn validate_json_record(value: &str) -> io::Result<()> {
             "JSON output must not contain ANSI escape sequences",
         ));
     }
-    if value.contains(['\r', '\n']) {
+    if value.contains('\r') || value.contains('\n') {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "JSON output must be exactly one line",
         ));
     }
-    if value.chars().any(|character| ('\u{0080}'..='\u{009f}').contains(&character)) {
+    if value
+        .chars()
+        .any(|character| ('\u{0080}'..='\u{009f}').contains(&character))
+    {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "JSON output must not contain C1 control characters",
@@ -608,30 +611,18 @@ mod tests {
         assert!(no_color.no_color);
         assert!(!no_color.force_color);
 
-        let clicolor_zero =
-            EnvironmentHints::from_values(false, Some("0"), None, None, None);
+        let clicolor_zero = EnvironmentHints::from_values(false, Some("0"), None, None, None);
         assert!(clicolor_zero.no_color);
 
         let dumb = EnvironmentHints::from_values(false, None, None, None, Some("DuMb"));
         assert!(dumb.no_color);
 
-        let forced = EnvironmentHints::from_values(
-            false,
-            None,
-            Some("1"),
-            Some("off"),
-            None,
-        );
+        let forced = EnvironmentHints::from_values(false, None, Some("1"), Some("off"), None);
         assert!(!forced.no_color);
         assert!(forced.force_color);
 
-        let falsey_force = EnvironmentHints::from_values(
-            false,
-            None,
-            Some("false"),
-            Some("0"),
-            None,
-        );
+        let falsey_force =
+            EnvironmentHints::from_values(false, None, Some("false"), Some("0"), None);
         assert!(!falsey_force.force_color);
     }
 
@@ -699,9 +690,11 @@ mod tests {
     #[test]
     fn json_emitter_allows_escaped_control_content_without_breaking_framing() {
         let mut emitter = StreamEmitter::new(Vec::<u8>::new());
-        assert!(emitter
-            .emit_json_line("{\"message\":\"first\\nsecond\"}")
-            .is_ok());
+        assert!(
+            emitter
+                .emit_json_line("{\"message\":\"first\\nsecond\"}")
+                .is_ok()
+        );
         let bytes = emitter.into_inner();
         assert_eq!(bytes, b"{\"message\":\"first\\nsecond\"}\n");
     }
@@ -726,7 +719,8 @@ mod tests {
 
     #[test]
     fn stream_emitter_exposes_and_finishes_flush_policy() {
-        let mut emitter = StreamEmitter::new(TrackingWriter::default()).with_flush_each_record(false);
+        let mut emitter =
+            StreamEmitter::new(TrackingWriter::default()).with_flush_each_record(false);
         assert!(!emitter.flushes_each_record());
         emitter.emit_line("one").unwrap();
         let writer = emitter.finish().unwrap();
