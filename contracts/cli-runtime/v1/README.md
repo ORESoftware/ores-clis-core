@@ -19,6 +19,12 @@ The runtime invariants are:
 - a downstream `BrokenPipe` such as `tool | head` is normal consumer termination; unrelated I/O failures remain errors.
 - machine-readable telemetry transports must remain ANSI-free independently of terminal color policy.
 
+## Cross-language conformance vectors
+
+`conformance-vectors.json` is a language-neutral behavioral evidence corpus for Rust, Go, Node, and future adapters. It covers shared argv parsing, deterministic conflict handling, the `--` terminator, TTY/environment resolution, log filtering, stream-role separation, ANSI/CRLF rejection, and top-level BrokenPipe classification.
+
+The vector file is **not** a third authority. TypeSpec and the authored Draft 2020-12 JSON Schema remain the independent peer authorities. Adapters should execute the vectors in their native runtime and report exact vector IDs; they must not regenerate either authority from the vectors or modify expected results merely to obtain green tests.
+
 `ores-clis-core` owns CLI runtime policy, not telemetry. `ores-otel` remains the logging/telemetry implementation authority, and `ORESoftware/ores-interfaces` remains the cross-repository shared-interface authority.
 
-Rust is the first implementation. Future language implementations must consume this contract rather than defining a parallel policy vocabulary.
+Rust is the first implementation. Future language implementations must consume this contract and conformance corpus rather than defining a parallel policy vocabulary.
