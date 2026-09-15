@@ -18,7 +18,11 @@ fn main() {
         .policy
         .resolve(TerminalState::detect(), EnvironmentHints::detect());
 
-    let command = shared.passthrough.first().map(String::as_str).unwrap_or("result");
+    let command = shared
+        .passthrough
+        .first()
+        .map(String::as_str)
+        .unwrap_or("result");
     let result = match command {
         "result" => emit_result(runtime.json(), runtime.color_stdout()),
         "diagnostic" => emit_diagnostic_and_result(
