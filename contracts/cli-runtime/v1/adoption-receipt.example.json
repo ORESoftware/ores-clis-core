@@ -1,0 +1,25 @@
+{
+  "schema_version": "cli-runtime-adoption-v1",
+  "repository": "example/example-cli",
+  "binary_surfaces": ["example"],
+  "runtime_contract_revision": "e6fa5a3f274c2e315b1bc68ae9199cb3ea5f75c3",
+  "implementation": {
+    "language": "rust",
+    "adapter": "ores-clis-core",
+    "revision": "e6fa5a3f274c2e315b1bc68ae9199cb3ea5f75c3"
+  },
+  "parser_adapter": "shared argv parser before domain parser",
+  "output_policy": {
+    "default": "shared_auto",
+    "fixed_protocol_commands": []
+  },
+  "telemetry_bridge": null,
+  "diagnostics_stream": "stderr",
+  "structured_stdout_ansi_free": true,
+  "broken_pipe_policy": "consumer_closed",
+  "deviations": [],
+  "evidence": {
+    "head_sha": "0000000000000000000000000000000000000000",
+    "checks": ["process-smoke"]
+  }
+}
