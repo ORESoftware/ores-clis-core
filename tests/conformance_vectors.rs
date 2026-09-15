@@ -1,3 +1,5 @@
+//! Validates the language-neutral CLI runtime conformance corpus structure and required boundary coverage.
+
 use std::collections::BTreeSet;
 
 const VECTORS: &str = include_str!("../contracts/cli-runtime/v1/conformance-vectors.json");
