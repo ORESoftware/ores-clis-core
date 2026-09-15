@@ -22,17 +22,12 @@ fn conformance_vectors_are_well_formed_unique_and_cover_core_boundaries() {
         let id = vector["id"].as_str().expect("every vector has an id");
         assert!(
             id.chars().all(|character| {
-                character.is_ascii_lowercase()
-                    || character.is_ascii_digit()
-                    || character == '_'
+                character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_'
             }),
             "vector id must be canonical snake_case: {id}"
         );
         assert!(ids.insert(id), "duplicate conformance vector id: {id}");
-        assert!(
-            vector["kind"].is_string(),
-            "vector {id} must name its kind"
-        );
+        assert!(vector["kind"].is_string(), "vector {id} must name its kind");
         assert!(
             vector.get("expected").is_some(),
             "vector {id} needs expected evidence"
@@ -51,6 +46,9 @@ fn conformance_vectors_are_well_formed_unique_and_cover_core_boundaries() {
         "stream_broken_pipe_is_clean_consumer_close",
         "stream_permission_denied_is_not_swallowed",
     ] {
-        assert!(ids.contains(required), "missing required vector: {required}");
+        assert!(
+            ids.contains(required),
+            "missing required vector: {required}"
+        );
     }
 }
