@@ -85,7 +85,7 @@ fn emit_stream(json: bool, color_stdout: bool, count: usize) -> io::Result<EmitD
         let result = if json {
             emitter.emit_primary_machine_record(&format!("{{\"seq\":{sequence}}}"))
         } else {
-            let line = paint(color_stdout, ColorRole::Info, &format!("seq={sequence}"));
+            let line = paint(color_stdout, ColorRole::Info, format!("seq={sequence}"));
             emitter.emit_primary_human_line(&line)
         };
         match top_level_io(result)? {
