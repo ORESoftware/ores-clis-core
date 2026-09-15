@@ -1,8 +1,8 @@
 //! Process-boundary fixture used by `ores-clis-core` integration tests and downstream consumers.
 
 use ores_clis_core::{
-    CliPolicy, ColorRole, EmitDisposition, EnvironmentHints, ProtocolEmitter, StreamRole,
-    TerminalState, paint, parse_shared_argv, top_level_io,
+    ColorRole, EmitDisposition, EnvironmentHints, ProtocolEmitter, StreamRole, TerminalState, paint,
+    parse_shared_argv, top_level_io,
 };
 use std::io;
 
@@ -71,7 +71,7 @@ fn emit_diagnostic_and_result(
 ) -> io::Result<EmitDisposition> {
     let stderr = io::stderr();
     let mut diagnostics = ProtocolEmitter::new(stderr.lock(), StreamRole::Diagnostics);
-    let line = paint(color_stderr, ColorRole::Warn, "diagnostic");
+    let line = paint(color_stderr, ColorRole::Warning, "diagnostic");
     match top_level_io(diagnostics.emit_diagnostic_line(&line))? {
         EmitDisposition::Written => emit_result(json, color_stdout),
         EmitDisposition::ConsumerClosed => Ok(EmitDisposition::ConsumerClosed),
