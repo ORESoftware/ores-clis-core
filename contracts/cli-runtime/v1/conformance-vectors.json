@@ -1,0 +1,144 @@
+{
+  "version": "cli-runtime-v1",
+  "authority_note": "Behavioral evidence only. TypeSpec and authored JSON Schema remain independent peer authorities.",
+  "vectors": [
+    {
+      "id": "argv_duplicate_idempotent",
+      "kind": "argv",
+      "argv": ["--json", "--output=json", "--color", "--color=always", "status"],
+      "expected": {
+        "output_mode": "json",
+        "color_mode": "always",
+        "log_level": "info",
+        "passthrough": ["status"],
+        "error": null
+      }
+    },
+    {
+      "id": "argv_output_conflict",
+      "kind": "argv",
+      "argv": ["--json", "--no-json"],
+      "expected": {
+        "error": "conflict:output"
+      }
+    },
+    {
+      "id": "argv_color_conflict",
+      "kind": "argv",
+      "argv": ["--color", "--no-color"],
+      "expected": {
+        "error": "conflict:color"
+      }
+    },
+    {
+      "id": "argv_log_conflict",
+      "kind": "argv",
+      "argv": ["--log-level=info", "--silent"],
+      "expected": {
+        "error": "conflict:log_level"
+      }
+    },
+    {
+      "id": "argv_terminator_stops_shared_parser",
+      "kind": "argv",
+      "argv": ["--json", "--", "--no-json", "payload"],
+      "expected": {
+        "output_mode": "json",
+        "passthrough": ["--no-json", "payload"],
+        "error": null
+      }
+    },
+    {
+      "id": "runtime_tty_auto_human",
+      "kind": "runtime",
+      "policy": {"output_mode": "auto", "color_mode": "auto", "log_level": "info"},
+      "terminals": {"stdin_tty": true, "stdout_tty": true, "stderr_tty": true},
+      "environment": {"no_color": false, "force_color": false},
+      "expected": {"output_mode": "human", "color_stdout": true, "color_stderr": true}
+    },
+    {
+      "id": "runtime_redirect_auto_json",
+      "kind": "runtime",
+      "policy": {"output_mode": "auto", "color_mode": "auto", "log_level": "info"},
+      "terminals": {"stdin_tty": true, "stdout_tty": false, "stderr_tty": true},
+      "environment": {"no_color": false, "force_color": false},
+      "expected": {"output_mode": "json", "color_stdout": false, "color_stderr": true}
+    },
+    {
+      "id": "runtime_no_color_disables_auto",
+      "kind": "runtime",
+      "policy": {"output_mode": "human", "color_mode": "auto", "log_level": "info"},
+      "terminals": {"stdin_tty": true, "stdout_tty": true, "stderr_tty": true},
+      "environment": {"no_color": true, "force_color": false},
+      "expected": {"output_mode": "human", "color_stdout": false, "color_stderr": false}
+    },
+    {
+      "id": "runtime_force_color_enables_auto_non_tty",
+      "kind": "runtime",
+      "policy": {"output_mode": "human", "color_mode": "auto", "log_level": "info"},
+      "terminals": {"stdin_tty": false, "stdout_tty": false, "stderr_tty": false},
+      "environment": {"no_color": false, "force_color": true},
+      "expected": {"output_mode": "human", "color_stdout": true, "color_stderr": true}
+    },
+    {
+      "id": "runtime_json_stdout_never_colored",
+      "kind": "runtime",
+      "policy": {"output_mode": "json", "color_mode": "always", "log_level": "trace"},
+      "terminals": {"stdin_tty": true, "stdout_tty": true, "stderr_tty": true},
+      "environment": {"no_color": false, "force_color": false},
+      "expected": {"output_mode": "json", "color_stdout": false, "color_stderr": true}
+    },
+    {
+      "id": "log_warn_threshold",
+      "kind": "log_filter",
+      "threshold": "warn",
+      "expected": {
+        "silent": false,
+        "quiet": false,
+        "error": true,
+        "warn": true,
+        "info": false,
+        "debug": false,
+        "trace": false
+      }
+    },
+    {
+      "id": "stream_machine_record_rejects_ansi",
+      "kind": "stream",
+      "role": "primary",
+      "operation": "machine_record",
+      "value": "\u001b[31m{\"ok\":false}",
+      "expected": {"error": "invalid_input"}
+    },
+    {
+      "id": "stream_machine_record_rejects_literal_newline",
+      "kind": "stream",
+      "role": "primary",
+      "operation": "machine_record",
+      "value": "{\"bad\":\"line1\nline2\"}",
+      "expected": {"error": "invalid_input"}
+    },
+    {
+      "id": "stream_role_separation",
+      "kind": "stream",
+      "role": "primary",
+      "operation": "diagnostic_line",
+      "value": "progress",
+      "expected": {"error": "invalid_input"}
+    },
+    {
+      "id": "stream_broken_pipe_is_clean_consumer_close",
+      "kind": "stream",
+      "operation": "top_level_io",
+      "io_error": "broken_pipe",
+      "expected": {"disposition": "consumer_closed", "error": null}
+    },
+    {
+      "id": "stream_permission_denied_is_not_swallowed",
+      "kind": "stream",
+      "operation": "top_level_io",
+      "io_error": "permission_denied",
+      "expected": {"error": "permission_denied"}
+    }
+  ]
+}
