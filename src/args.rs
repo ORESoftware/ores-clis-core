@@ -31,7 +31,8 @@ impl OutputMode {
 ///
 /// Arguments not owned by the shared policy layer are preserved verbatim in
 /// `passthrough` for the consumer's real parser. A `--` terminator stops shared
-/// parsing and is not included in the returned passthrough list.
+/// parsing and is preserved so the downstream parser retains the same option
+/// boundary the user supplied.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedSharedArgs {
     /// Shared runtime policy derived from explicit CLI choices.
@@ -149,7 +150,7 @@ where
         let token = &tokens[index];
 
         if token == "--" {
-            passthrough.extend(tokens[index + 1..].iter().cloned());
+            passthrough.extend(tokens[index..].iter().cloned());
             break;
         }
 
@@ -394,10 +395,10 @@ mod tests {
     }
 
     #[test]
-    fn terminator_stops_shared_parsing() {
+    fn terminator_stops_shared_parsing_and_is_preserved_for_downstream_parser() {
         let parsed = parse_shared_argv(["--json", "--", "--no-json", "payload"]).unwrap();
         assert_eq!(parsed.policy.output, OutputMode::Json);
-        assert_eq!(parsed.passthrough, vec!["--no-json", "payload"]);
+        assert_eq!(parsed.passthrough, vec!["--", "--no-json", "payload"]);
     }
 
     #[test]
