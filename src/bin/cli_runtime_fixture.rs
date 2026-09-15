@@ -1,8 +1,8 @@
 //! Process-boundary fixture used by `ores-clis-core` integration tests and downstream consumers.
 
 use ores_clis_core::{
-    ColorRole, EmitDisposition, EnvironmentHints, ProtocolEmitter, StreamRole, TerminalState, paint,
-    parse_shared_argv, top_level_io,
+    ColorRole, EmitDisposition, EnvironmentHints, ProtocolEmitter, StreamRole, TerminalState,
+    paint, parse_shared_argv, top_level_io,
 };
 use std::io;
 
