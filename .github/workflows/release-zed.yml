@@ -1,0 +1,79 @@
+name: release Zed package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ores-clis-core-zed-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact release candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install released Zed package manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/zed.tar.gz" \
+            https://github.com/zed-pkg/zed-cli/releases/download/v0.2.3/zed-x86_64-unknown-linux-gnu.tar.gz
+          printf '%s  %s\n' \
+            b8f81a8e4943cbaeb47153386819a911dcf02666a8709c5bd013e4f35b1ba1b9 \
+            "$RUNNER_TEMP/zed.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/zed.tar.gz" -C "$RUNNER_TEMP"
+          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Verify package version and release tag
+        shell: bash
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n '/^\[package\]$/,/^\[/s/^version = "\([^"]*\)"/\1/p' .zpkg.toml | head -n1)"
+          test -n "$version"
+          if [[ "$RELEASE_REF" == refs/tags/* ]]; then
+            test "$RELEASE_TAG" = "v$version" || {
+              echo "tag $RELEASE_TAG does not match .zpkg.toml version $version" >&2
+              exit 1
+            }
+            test "$(git rev-list -n1 "$RELEASE_TAG")" = "$(git rev-parse HEAD)" || {
+              echo 'release tag does not resolve to checked-out HEAD' >&2
+              exit 1
+            }
+          else
+            echo "manual release rehearsal for version $version at $(git rev-parse HEAD)"
+          fi
+
+      - name: Validate package metadata
+        run: zed validate
+
+      - name: Run clean Zed roundtrip admission
+        run: zed r2g --clean
+
+      - name: Publish tagged package
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ZED_PKG_TOKEN:-}" ]]; then
+            echo '::error::ZED_PKG_TOKEN is required to publish a tagged release'
+            exit 1
+          fi
+          zed publish
