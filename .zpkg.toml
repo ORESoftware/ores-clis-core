@@ -10,9 +10,11 @@ language = "rust"
 vcs = "git"
 url = "https://github.com/ORESoftware/ores-clis-core"
 
+# Runtime/build package dependencies belong here. The crate itself only links
+# serde_json through Cargo. ORESoftware/ores-interfaces provides cross-repo
+# authority lineage and typespec-json-schema-validator provides admission; both
+# remain exact-pinned CI/contract tooling rather than install-time SDK edges.
 [dependencies]
-"oresoftware/ores-interfaces" = "^0.1.0"
-"oresoftware/typespec-json-schema-validator" = "^0.1.0"
 
 [build]
 command = "cargo build --release"
@@ -24,7 +26,15 @@ dir = ".vendor/.zed"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-exclude = ["target/**", ".vendor/.zed/**", ".typespec-json-schema-validator/**", "tmp/**", "**/*.log"]
+smoke_test = "cargo check --lib"
+exclude = [
+  "target/**",
+  ".vendor/.zed/**",
+  ".typespec-json-schema-validator/**",
+  ".contract/**",
+  "tmp/**",
+  "**/*.log",
+]
 
 [publish.native]
 registry = "crates-io"
