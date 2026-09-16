@@ -10,25 +10,37 @@ language = "rust"
 vcs = "git"
 url = "https://github.com/ORESoftware/ores-clis-core"
 
+# Runtime/build package dependencies belong here. The crate itself only links
+# serde_json through Cargo. ORESoftware/ores-interfaces provides cross-repo
+# authority lineage and typespec-json-schema-validator provides admission; both
+# remain exact-pinned CI/contract tooling rather than install-time SDK edges.
 [dependencies]
-"oresoftware/ores-interfaces" = "^0.1.0"
-"oresoftware/typespec-json-schema-validator" = "^0.1.0"
-
-[build]
-command = "cargo build --release"
-outputs = ["target/release/libores_clis_core.rlib", "contracts"]
 
 [install]
 dir = ".vendor/.zed"
 
+# This is a shared source SDK, not a prebuilt binary/rlib bundle. Consumers use
+# Cargo path+version dependencies against the Zed-materialized crate tree.
+[targets.rust]
+dir = "."
+adapter = "rust"
+
 [publish]
 include_readme = true
 tag_format = "v{version}"
-exclude = ["target/**", ".vendor/.zed/**", ".typespec-json-schema-validator/**", "tmp/**", "**/*.log"]
+smoke_test = "cargo check --manifest-path \"$ZED_PKG_TEST_TARGET/Cargo.toml\" --lib"
+exclude = [
+  "target/**",
+  ".vendor/.zed/**",
+  ".typespec-json-schema-validator/**",
+  ".contract/**",
+  "tmp/**",
+  "**/*.log",
+]
 
-[publish.native]
-registry = "crates-io"
-package = "ores-clis-core"
+# Zed is the source-SDK package authority for this whole-repository Rust target.
+# Native crates.io publication is intentionally a separate concern and must not
+# be encoded as a target/root native route here.
 
 [scripts]
 test = "cargo test --all-targets && tjsv check --typespec=contracts/cli-runtime/v1/main.tsp --schema=contracts/cli-runtime/v1/authored.schema.json --report=.typespec-json-schema-validator/cli-runtime-v1/report.json"
