@@ -25,6 +25,10 @@ dir = ".vendor/.zed"
 dir = "."
 adapter = "rust"
 
+[targets.rust.native]
+registry = "crates-io"
+package = "ores-clis-core"
+
 [publish]
 include_readme = true
 tag_format = "v{version}"
@@ -37,10 +41,6 @@ exclude = [
   "tmp/**",
   "**/*.log",
 ]
-
-[publish.native]
-registry = "crates-io"
-package = "ores-clis-core"
 
 [scripts]
 test = "cargo test --all-targets && tjsv check --typespec=contracts/cli-runtime/v1/main.tsp --schema=contracts/cli-runtime/v1/authored.schema.json --report=.typespec-json-schema-validator/cli-runtime-v1/report.json"
