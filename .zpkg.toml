@@ -26,7 +26,7 @@ dir = ".vendor/.zed"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-smoke_test = "cargo check --lib"
+smoke_test = "cargo check --manifest-path \"$ZED_PKG_TEST_TARGET/Cargo.toml\" --lib"
 exclude = [
   "target/**",
   ".vendor/.zed/**",
