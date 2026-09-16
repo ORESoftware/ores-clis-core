@@ -25,10 +25,6 @@ dir = ".vendor/.zed"
 dir = "."
 adapter = "rust"
 
-[targets.rust.native]
-registry = "crates-io"
-package = "ores-clis-core"
-
 [publish]
 include_readme = true
 tag_format = "v{version}"
@@ -41,6 +37,13 @@ exclude = [
   "tmp/**",
   "**/*.log",
 ]
+
+# Single-language packages whose native manifest lives at repository root use
+# the package-level native release route. Whole-repository targets intentionally
+# cannot own a separate native route because they publish as the root package.
+[publish.native]
+registry = "crates-io"
+package = "ores-clis-core"
 
 [scripts]
 test = "cargo test --all-targets && tjsv check --typespec=contracts/cli-runtime/v1/main.tsp --schema=contracts/cli-runtime/v1/authored.schema.json --report=.typespec-json-schema-validator/cli-runtime-v1/report.json"
