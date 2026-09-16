@@ -38,12 +38,9 @@ exclude = [
   "**/*.log",
 ]
 
-# Single-language packages whose native manifest lives at repository root use
-# the package-level native release route. Whole-repository targets intentionally
-# cannot own a separate native route because they publish as the root package.
-[publish.native]
-registry = "crates-io"
-package = "ores-clis-core"
+# Zed is the source-SDK package authority for this whole-repository Rust target.
+# Native crates.io publication is intentionally a separate concern and must not
+# be encoded as a target/root native route here.
 
 [scripts]
 test = "cargo test --all-targets && tjsv check --typespec=contracts/cli-runtime/v1/main.tsp --schema=contracts/cli-runtime/v1/authored.schema.json --report=.typespec-json-schema-validator/cli-runtime-v1/report.json"
