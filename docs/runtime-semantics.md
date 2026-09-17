@@ -38,7 +38,7 @@ Per-record flushing is the default for terminals, pipes, and long-running stream
 
 ## Environment inventory and defaults
 
-`.zpkg.toml` carries one `[env]` section and one `[[env.vars]]` entry for every process environment variable read by this library. These declarations use Zed's package-environment vocabulary (`name`, `type`, `required`, `secret`, optional `default`, optional `enum`, and `description`). The declaration is package/input metadata, not a second runtime configuration authority and not a plaintext secret store.
+The ambient process variables consumed by this library are part of the SDK/runtime contract documented here. They are deliberately not encoded in `.zpkg.toml`: the current Zed package-manifest schema does not define arbitrary ambient environment-variable inventory entries, while Zed's environment-plan schema models development-environment manager/tool/system-package provenance rather than process-input declarations.
 
 The complete current inventory is:
 
@@ -52,9 +52,9 @@ The complete current inventory is:
 | `ORES_CLIS_SIGNAL_HANDLERS` | `true` | `signal_handlers.enabled` |
 | `ORES_CLIS_SIGNAL_TTY_REQUIREMENT` | `stdin` | `signal_handlers.tty_requirement` |
 
-The first five keys are established shell/terminal conventions. `ores-clis-core` reads them but does not own their ambient values, so `.zpkg.toml` must not fabricate defaults for them. This is particularly important for `NO_COLOR`: the code is presence-based, so setting an empty default would change behavior rather than describe it.
+The first five keys are established shell/terminal conventions. `ores-clis-core` reads them but does not own their ambient values, so no committed package metadata may fabricate defaults for them. This is particularly important for `NO_COLOR`: the code is presence-based, so injecting even an empty default changes behavior rather than merely describing it.
 
-The two `ORES_CLIS_*` keys are owned by this library, and their `default` entries mirror the code defaults. All seven entries are non-secret. Secrets must stay in the secret-store/environment boundary rather than being given defaults in package metadata.
+The two `ORES_CLIS_*` keys are owned by this library and their documented fallbacks mirror the code defaults after a consumer explicitly calls signal setup. All seven are non-secret names; secret values must stay in the secret-store/process-environment boundary rather than package metadata or source control.
 
 ## Optional signal and interactive shutdown policy
 
@@ -87,7 +87,7 @@ A Rust CLI adopting this crate should:
 7. keep `NO_COLOR`, `CLICOLOR`, `FORCE_COLOR`, `CLICOLOR_FORCE`, and `TERM` behavior in the shared resolver;
 8. treat a non-TTY stdout as JSON only where the command's compatibility contract allows it;
 9. classify top-level broken pipes without swallowing other I/O errors;
-10. keep the `.zpkg.toml` env inventory synchronized with every ambient variable read by this crate and never put secret values there;
+10. keep this documented ambient-variable inventory synchronized with every environment read by the crate and never commit secret values;
 11. call the shared signal setup only in CLIs that intentionally opt into Ctrl-D-confirmed interactive shutdown;
 12. keep `ores-otel` as the telemetry implementation rather than introducing a dependency cycle through this crate.
 
