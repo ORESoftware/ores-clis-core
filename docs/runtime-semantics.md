@@ -38,7 +38,7 @@ Per-record flushing is the default for terminals, pipes, and long-running stream
 
 ## Environment inventory and defaults
 
-`.zpkg.toml` carries a `[[env]]` inventory for every process environment variable read by this library. These entries reuse the ORES env-manifest vocabulary (`name`, `key`, `kind`, `required`, `secret`, `exposure`, `description`, `overrides`, `environments`, and optional `defaultValue`). The declaration is package/input metadata, not a second runtime configuration authority and not a plaintext secret store.
+`.zpkg.toml` carries one `[env]` section and one `[[env.vars]]` entry for every process environment variable read by this library. These declarations use Zed's package-environment vocabulary (`name`, `type`, `required`, `secret`, optional `default`, optional `enum`, and `description`). The declaration is package/input metadata, not a second runtime configuration authority and not a plaintext secret store.
 
 The complete current inventory is:
 
@@ -54,7 +54,7 @@ The complete current inventory is:
 
 The first five keys are established shell/terminal conventions. `ores-clis-core` reads them but does not own their ambient values, so `.zpkg.toml` must not fabricate defaults for them. This is particularly important for `NO_COLOR`: the code is presence-based, so setting an empty default would change behavior rather than describe it.
 
-The two `ORES_CLIS_*` keys are owned by this library, and their `defaultValue` entries mirror the code defaults. All seven entries are non-secret and `env-only`; secrets must stay in the secret-store/environment boundary rather than being given defaults in package metadata.
+The two `ORES_CLIS_*` keys are owned by this library, and their `default` entries mirror the code defaults. All seven entries are non-secret. Secrets must stay in the secret-store/environment boundary rather than being given defaults in package metadata.
 
 ## Optional signal and interactive shutdown policy
 
