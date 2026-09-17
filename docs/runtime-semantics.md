@@ -36,6 +36,24 @@ A command with a genuinely different wire protocol may opt out, but the deviatio
 
 Per-record flushing is the default for terminals, pipes, and long-running streams. Bounded file-oriented commands may choose `FlushPolicy::OnDemand` and must flush explicitly before successful termination. Partial writes are handled through `Write::write_all`, and explicit flush failures are propagated.
 
+## Optional signal and interactive shutdown policy
+
+Signal interception is never implicit. Importing the crate leaves the operating system's normal signal behavior untouched; a CLI must explicitly call `setup_signal_handlers()` or `setup_signal_handlers_with(...)`.
+
+The default installed policy is:
+
+- SIGINT + TTY stdin: emit a diagnostic on stderr telling the operator to use Ctrl-D, arm a stdin EOF/Ctrl-D waiter, and keep running.
+- SIGINT + non-TTY stdin: emit a diagnostic and terminate with the conventional code 130.
+- SIGTERM on Unix: emit a diagnostic and terminate immediately with the conventional code 143, regardless of TTY state.
+- Ctrl-D/EOF after the interactive SIGINT path: emit a diagnostic and terminate cleanly with code 0.
+- Repeated setup calls are idempotent within the process.
+
+stdin is the mandatory interactive signal because Ctrl-D is an input/EOF gesture. stdout and stderr TTY state may further restrict interactive handling, but they never substitute for non-TTY stdin. The supported stricter requirements are `stdin+stdout`, `stdin+stderr`, and `all`.
+
+`ORES_CLIS_SIGNAL_HANDLERS=0|false|no|off` disables an explicit setup call, while the true spellings `1|true|yes|on` enable it. `ORES_CLIS_SIGNAL_TTY_REQUIREMENT=stdin|stdin+stdout|stdin+stderr|all` controls the TTY requirement. Missing environment values preserve the default: setup enabled after an explicit function call, with stdin as the only required TTY.
+
+Consumers with cleanup work should use `setup_signal_handlers_with(...)`. Its callback is delivered at most once with a `ShutdownReason` and owns the final shutdown action; this is where consumers can flush `ores-otel`, cancel runtimes, drain workers, or otherwise perform graceful shutdown before exiting.
+
 ## Adoption checklist
 
 A Rust CLI adopting this crate should:
@@ -49,6 +67,7 @@ A Rust CLI adopting this crate should:
 7. keep `NO_COLOR`, `FORCE_COLOR`, and `CLICOLOR_FORCE` behavior in the shared resolver;
 8. treat a non-TTY stdout as JSON only where the command's compatibility contract allows it;
 9. classify top-level broken pipes without swallowing other I/O errors;
-10. keep `ores-otel` as the telemetry implementation rather than introducing a dependency cycle through this crate.
+10. call the shared signal setup only in CLIs that intentionally opt into Ctrl-D-confirmed interactive shutdown;
+11. keep `ores-otel` as the telemetry implementation rather than introducing a dependency cycle through this crate.
 
 The authored TypeSpec and Draft 2020-12 JSON Schema remain independent peer authorities for wire shapes. TJSV is parity evidence between them and generated artifacts, not a replacement authority.
