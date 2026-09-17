@@ -22,7 +22,7 @@ Color is resolved independently per stream. Automatic color follows the destinat
 
 ## Environment contract
 
-The environment variables this SDK reads are declared in `.zpkg.toml` using Zed's package environment grammar: one `[env]` section plus one `[[env.vars]]` entry per variable. The manifest is inventory/contract metadata: it documents process inputs and library-owned defaults, but it does not turn `.zpkg.toml` into runtime policy or require Zed to inject ambient shell variables.
+The environment variables this SDK reads are documented here and in `docs/runtime-semantics.md`. `.zpkg.toml` intentionally does not duplicate this inventory: the current Zed package-manifest schema does not define arbitrary ambient process-variable declarations, and Zed's environment-plan model describes manager/tool/system-package provenance rather than runtime process-input enumeration.
 
 | Variable | Default when absent | Effect |
 | --- | --- | --- |
@@ -34,7 +34,7 @@ The environment variables this SDK reads are declared in `.zpkg.toml` using Zed'
 | `ORES_CLIS_SIGNAL_HANDLERS` | `true` | Controls whether an explicit signal-handler setup call installs handlers. |
 | `ORES_CLIS_SIGNAL_TTY_REQUIREMENT` | `stdin` | Chooses `stdin`, `stdin+stdout`, `stdin+stderr`, or `all` for interactive SIGINT eligibility; `stdin+stdout+stderr` is accepted as an alias for `all`. |
 
-The conventional terminal/color variables intentionally do not receive fabricated defaults in `.zpkg.toml`: absence is semantically different from presence for `NO_COLOR`, and the others are ambient terminal conventions rather than ORES-owned configuration. Secret values do not belong in this manifest.
+The conventional terminal/color variables intentionally have no fabricated defaults because absence is semantically meaningful, especially for presence-based `NO_COLOR`. The two `ORES_CLIS_*` values are library-owned fallbacks applied by the runtime after an explicit setup call. Secret values belong at the secret-store/process-environment boundary, not in package metadata or committed documentation.
 
 ## Optional signal and Ctrl-D shutdown policy
 
