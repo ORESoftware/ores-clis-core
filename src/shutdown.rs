@@ -207,7 +207,9 @@ impl fmt::Display for SignalHandlerError {
                 formatter,
                 "invalid {variable} value {value:?}; expected {expected}"
             ),
-            Self::Install { message } => write!(formatter, "failed to install signal handlers: {message}"),
+            Self::Install { message } => {
+                write!(formatter, "failed to install signal handlers: {message}")
+            }
             Self::UnsupportedPlatform => {
                 formatter.write_str("signal handlers are unsupported on this target platform")
             }
@@ -404,9 +406,10 @@ fn install_platform_handler(
     use signal_hook::consts::signal::{SIGINT, SIGTERM};
     use signal_hook::iterator::Signals;
 
-    let mut signals = Signals::new([SIGINT, SIGTERM]).map_err(|error| SignalHandlerError::Install {
-        message: error.to_string(),
-    })?;
+    let mut signals =
+        Signals::new([SIGINT, SIGTERM]).map_err(|error| SignalHandlerError::Install {
+            message: error.to_string(),
+        })?;
     let ctrl_d_armed = Arc::new(AtomicBool::new(false));
     let shutdown_started = Arc::new(AtomicBool::new(false));
 
@@ -415,12 +418,9 @@ fn install_platform_handler(
         .spawn(move || {
             for signal in signals.forever() {
                 match signal {
-                    SIGINT => handle_sigint(
-                        interactive,
-                        &ctrl_d_armed,
-                        &shutdown_started,
-                        &callback,
-                    ),
+                    SIGINT => {
+                        handle_sigint(interactive, &ctrl_d_armed, &shutdown_started, &callback)
+                    }
                     SIGTERM => handle_sigterm(&shutdown_started, &callback),
                     _ => {}
                 }
@@ -441,12 +441,7 @@ fn install_platform_handler(
     let shutdown_started = Arc::new(AtomicBool::new(false));
 
     ctrlc::try_set_handler(move || {
-        handle_sigint(
-            interactive,
-            &ctrl_d_armed,
-            &shutdown_started,
-            &callback,
-        );
+        handle_sigint(interactive, &ctrl_d_armed, &shutdown_started, &callback);
     })
     .map_err(|error| SignalHandlerError::Install {
         message: error.to_string(),
