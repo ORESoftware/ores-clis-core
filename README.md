@@ -38,7 +38,11 @@ The conventional terminal/color variables intentionally have no fabricated defau
 
 ## Optional signal and Ctrl-D shutdown policy
 
-Signal handling is explicitly opt-in. Importing the crate does not replace the platform's normal SIGINT behavior; a consumer must call `setup_signal_handlers()` (or the callback variant) to install the shared policy.
+Signal handling is explicitly opt-in. Importing the crate does not replace the platform's normal SIGINT behavior; a consumer must call one of the setup functions to install shared behavior.
+
+### Legacy one-shot CLI policy
+
+`setup_signal_handlers()` and `setup_signal_handlers_with(...)` retain the established one-shot CLI contract:
 
 ```rust
 use ores_clis_core::setup_signal_handlers;
@@ -50,23 +54,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-With the default setup:
-
 - If stdin is a TTY, SIGINT logs `use Ctrl-D to shutdown process`, arms a Ctrl-D/EOF waiter, and keeps the process alive until Ctrl-D is received.
 - If stdin is not a TTY, SIGINT logs a shutdown message and exits with code 130.
-- SIGTERM always logs a shutdown message and exits with code 143 on Unix; it never waits for Ctrl-D.
+- SIGTERM logs a shutdown message and exits with code 143 on Unix; it never waits for Ctrl-D.
 - Ctrl-D/EOF after the interactive SIGINT path exits cleanly with code 0.
-- The handler is process-global and repeated setup calls are idempotent.
+- The one-shot callback is invoked at most once and repeated setup calls are idempotent.
+
+This API remains appropriate for commands where the operator wants Ctrl-D confirmation before any shutdown callback runs.
+
+### Two-phase graceful server lifecycle
+
+Long-running servers should use `setup_signal_handlers_with_lifecycle(...)`. It reports `ShutdownAction::Drain` separately from `ShutdownAction::Force` so terminal event capture does not become a second HTTP lifecycle authority:
+
+```rust
+use ores_clis_core::{
+    ShutdownAction,
+    SignalHandlerOptions,
+    setup_signal_handlers_with_lifecycle,
+};
+
+let options = SignalHandlerOptions::from_env()?;
+let _status = setup_signal_handlers_with_lifecycle(options, move |action| {
+    match action {
+        ShutdownAction::Drain(reason) => {
+            // Stop listener/ingress admission and start the server drain.
+            eprintln!("graceful drain requested: {reason:?}");
+        }
+        ShutdownAction::Force(reason) => {
+            // Escalate an already-started drain.
+            eprintln!("forced shutdown requested: {reason:?}");
+        }
+    }
+})?;
+```
+
+The lifecycle contract is:
+
+- Interactive first SIGINT emits `Drain(SigInt)` immediately, logs that Ctrl-D can force shutdown, and arms exactly one Ctrl-D/EOF waiter.
+- Repeated interactive SIGINT does not bypass the grace window and does not emit another drain or force event.
+- Ctrl-D/EOF after draining begins emits `Force(CtrlD)` at most once.
+- Non-interactive SIGINT emits `Drain(SigInt)` directly.
+- Unix SIGTERM emits `Drain(SigTerm)` and never implicitly forces.
+- If attaching or reading the Ctrl-D waiter fails after a lifecycle drain started, the drain remains active; implementation failure is not reinterpreted as operator force intent.
+
+This is the intended process-event bridge for `ores-middleware::ShutdownCoordinator`: a consumer maps `Drain` to its listener/application drain path and `Force` to the coordinator's force escalation. `ores-clis-core` deliberately does not depend on `ores-middleware`, stop network listeners, choose HTTP status codes, or flush telemetry. Those responsibilities remain with the consumer, middleware/transport layer, and `ores-otel` respectively.
 
 stdin is intentionally authoritative because Ctrl-D is an input/EOF gesture. stdout and stderr can differ from stdin in pipelines and redirection; consumers that want a stricter interactive definition may require `stdin+stdout`, `stdin+stderr`, or all three streams through `SignalHandlerOptions` or `ORES_CLIS_SIGNAL_TTY_REQUIREMENT`.
 
-Two environment switches are recognized when the setup function is called:
+Two environment switches are recognized when a setup function is called:
 
-- `ORES_CLIS_SIGNAL_HANDLERS=1|true|yes|on` enables installation and `0|false|no|off` disables it. The default is enabled **only after the consumer calls the setup function**.
+- `ORES_CLIS_SIGNAL_HANDLERS=1|true|yes|on` enables installation and `0|false|no|off` disables it. The default is enabled **only after the consumer calls a setup function**.
 - `ORES_CLIS_SIGNAL_TTY_REQUIREMENT=stdin|stdin+stdout|stdin+stderr|all` tightens the TTY requirement for the interactive SIGINT path. `stdin+stdout+stderr` is accepted as an alias for `all`; stdin remains mandatory in every mode.
-
-Consumers that need graceful cleanup should use `setup_signal_handlers_with(...)`. The callback is invoked at most once with `ShutdownReason` and owns the final shutdown action, allowing the CLI to flush logs, cancel work, drain resources, or coordinate an async runtime before exiting.
 
 ## Adoption policy
 
-Existing CLIs should preserve established protocol compatibility during migration. A command that intentionally differs from the automatic human/JSON policy may keep an explicit local default, but the deviation should be documented and tested rather than silently re-implementing TTY, color, log-level, or stream-routing semantics.
+Existing CLIs should preserve established protocol compatibility during migration. A command that intentionally differs from the automatic human/JSON policy may keep an explicit local default, but the deviation should be documented and tested rather than silently re-implementing TTY, color, log-level, stream-routing, or shutdown semantics.
