@@ -13,10 +13,12 @@ pub use runtime::*;
 
 mod args;
 mod protocol;
+mod reserved;
 mod shutdown;
 
 pub use args::{ParsedSharedArgs, SharedArgError, parse_shared_argv};
 pub use protocol::{EmitDisposition, FlushPolicy, ProtocolEmitter, StreamRole, top_level_io};
+pub use reserved::parse_shared_argv_with_reserved;
 pub use shutdown::{
     SIGNAL_HANDLERS_ENV, SIGNAL_TTY_REQUIREMENT_ENV, ShutdownReason, SignalHandlerError,
     SignalHandlerOptions, SignalHandlerStatus, TtyRequirement, setup_signal_handlers,
