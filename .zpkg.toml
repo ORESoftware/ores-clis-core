@@ -2,7 +2,7 @@
 org = "oresoftware"
 name = "ores-clis-core"
 version = "0.1.0"
-description = "Shared Rust CLI runtime policy for terminal-aware output, color, log levels, and streaming"
+description = "Shared Rust CLI runtime policy for terminal-aware output, signals, log levels, and streaming"
 license = "MIT"
 language = "rust"
 
@@ -10,10 +10,11 @@ language = "rust"
 vcs = "git"
 url = "https://github.com/ORESoftware/ores-clis-core"
 
-# Runtime/build package dependencies belong here. The crate itself only links
-# serde_json through Cargo. ORESoftware/ores-interfaces provides cross-repo
-# authority lineage and typespec-json-schema-validator provides admission; both
-# remain exact-pinned CI/contract tooling rather than install-time SDK edges.
+# Zed-level runtime/build package dependencies belong here. Rust crate
+# dependencies (serde_json plus target-specific signal support) remain declared
+# in Cargo.toml. ORESoftware/ores-interfaces provides cross-repo authority
+# lineage and typespec-json-schema-validator provides admission; both remain
+# exact-pinned CI/contract tooling rather than install-time SDK edges.
 [dependencies]
 
 [install]
