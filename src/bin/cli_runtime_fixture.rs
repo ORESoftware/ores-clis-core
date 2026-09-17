@@ -150,8 +150,8 @@ fn emit_lifecycle_action(action: ShutdownAction) {
 
 fn run_lifecycle_signal_fixture() -> io::Result<EmitDisposition> {
     let options = SignalHandlerOptions::from_env().map_err(signal_error)?;
-    let status =
-        setup_signal_handlers_with_lifecycle(options, emit_lifecycle_action).map_err(signal_error)?;
+    let status = setup_signal_handlers_with_lifecycle(options, emit_lifecycle_action)
+        .map_err(signal_error)?;
     let disposition = emit_machine_record(
         &json!({"mode": "lifecycle", "status": status_name(status)}).to_string(),
     )?;
@@ -165,9 +165,8 @@ fn run_lifecycle_signal_fixture() -> io::Result<EmitDisposition> {
 
 fn run_legacy_signal_fixture() -> io::Result<EmitDisposition> {
     let status = setup_signal_handlers().map_err(signal_error)?;
-    let disposition = emit_machine_record(
-        &json!({"mode": "legacy", "status": status_name(status)}).to_string(),
-    )?;
+    let disposition =
+        emit_machine_record(&json!({"mode": "legacy", "status": status_name(status)}).to_string())?;
     if status != SignalHandlerStatus::Installed {
         return Ok(disposition);
     }
@@ -191,8 +190,10 @@ fn run_double_install_fixture() -> io::Result<EmitDisposition> {
 
 fn run_disabled_then_enabled_fixture() -> io::Result<EmitDisposition> {
     let options = SignalHandlerOptions::new(TerminalState::new(false, false, false));
-    let first = setup_signal_handlers_with(options.with_enabled(false), |_| {}).map_err(signal_error)?;
-    let second = setup_signal_handlers_with(options.with_enabled(true), |_| {}).map_err(signal_error)?;
+    let first =
+        setup_signal_handlers_with(options.with_enabled(false), |_| {}).map_err(signal_error)?;
+    let second =
+        setup_signal_handlers_with(options.with_enabled(true), |_| {}).map_err(signal_error)?;
     emit_machine_record(
         &json!({
             "first": status_name(first),
