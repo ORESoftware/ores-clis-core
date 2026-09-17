@@ -1,9 +1,9 @@
 //! Exercises the shared CLI runtime through real child-process stdout/stderr pipe boundaries.
 
 use serde_json::Value;
-use std::io::{BufRead, BufReader};
 #[cfg(unix)]
 use std::io::Read;
+use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
 fn fixture() -> Command {
