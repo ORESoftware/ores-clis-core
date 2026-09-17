@@ -139,8 +139,14 @@ mod unix_signals {
     fn read_json_line(reader: &mut BufReader<ChildStdout>) -> Value {
         let mut line = String::new();
         reader.read_line(&mut line).expect("read JSON line");
-        assert!(!line.is_empty(), "fixture closed stdout before emitting evidence");
-        assert!(!line.as_bytes().contains(&0x1b), "machine evidence must remain ANSI-free");
+        assert!(
+            !line.is_empty(),
+            "fixture closed stdout before emitting evidence"
+        );
+        assert!(
+            !line.as_bytes().contains(&0x1b),
+            "machine evidence must remain ANSI-free"
+        );
         serde_json::from_str(line.trim_end()).expect("valid fixture JSON")
     }
 
@@ -217,8 +223,14 @@ mod unix_signals {
         assert_eq!(event["event"], "drain");
         assert_eq!(event["reason"], "sigint");
         let (remaining, stderr) = kill_and_collect(running);
-        assert!(remaining.is_empty(), "one SIGINT must emit one lifecycle event");
-        assert!(!stderr.contains("Ctrl-D"), "redirected stdin must never advertise Ctrl-D");
+        assert!(
+            remaining.is_empty(),
+            "one SIGINT must emit one lifecycle event"
+        );
+        assert!(
+            !stderr.contains("Ctrl-D"),
+            "redirected stdin must never advertise Ctrl-D"
+        );
     }
 
     #[test]
@@ -244,7 +256,10 @@ mod unix_signals {
         send_signal(&running.child, "INT");
         thread::sleep(Duration::from_millis(150));
         let (remaining, _) = kill_and_collect(running);
-        assert!(remaining.is_empty(), "repeated SIGINT must be lifecycle-idempotent");
+        assert!(
+            remaining.is_empty(),
+            "repeated SIGINT must be lifecycle-idempotent"
+        );
     }
 
     #[test]
@@ -258,7 +273,10 @@ mod unix_signals {
         send_signal(&running.child, "TERM");
         thread::sleep(Duration::from_millis(150));
         let (remaining, _) = kill_and_collect(running);
-        assert!(remaining.is_empty(), "repeated SIGTERM must be lifecycle-idempotent");
+        assert!(
+            remaining.is_empty(),
+            "repeated SIGTERM must be lifecycle-idempotent"
+        );
     }
 
     #[test]
@@ -271,7 +289,10 @@ mod unix_signals {
         send_signal(&running.child, "TERM");
         thread::sleep(Duration::from_millis(150));
         let (remaining, _) = kill_and_collect(running);
-        assert!(remaining.is_empty(), "later SIGTERM must not replace the winning drain");
+        assert!(
+            remaining.is_empty(),
+            "later SIGTERM must not replace the winning drain"
+        );
     }
 
     #[test]
@@ -284,7 +305,10 @@ mod unix_signals {
         send_signal(&running.child, "INT");
         thread::sleep(Duration::from_millis(150));
         let (remaining, stderr) = kill_and_collect(running);
-        assert!(remaining.is_empty(), "later SIGINT must not replace the winning drain");
+        assert!(
+            remaining.is_empty(),
+            "later SIGINT must not replace the winning drain"
+        );
         assert!(!stderr.contains("Ctrl-D"));
     }
 
