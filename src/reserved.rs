@@ -76,11 +76,9 @@ mod tests {
 
     #[test]
     fn reserved_quiet_stays_with_consumer() {
-        let parsed = parse_shared_argv_with_reserved(
-            ["conformance", "--quiet", "--json"],
-            ["--quiet"],
-        )
-        .unwrap();
+        let parsed =
+            parse_shared_argv_with_reserved(["conformance", "--quiet", "--json"], ["--quiet"])
+                .unwrap();
 
         assert_eq!(parsed.policy.output, OutputMode::Json);
         assert_eq!(parsed.policy.log_level, LogLevel::Info);
@@ -109,11 +107,9 @@ mod tests {
 
     #[test]
     fn terminator_remains_authoritative() {
-        let parsed = parse_shared_argv_with_reserved(
-            ["--json", "--", "--quiet"],
-            ["--quiet", "--"],
-        )
-        .unwrap();
+        let parsed =
+            parse_shared_argv_with_reserved(["--json", "--", "--quiet"], ["--quiet", "--"])
+                .unwrap();
         assert_eq!(parsed.passthrough, vec!["--", "--quiet"]);
     }
 }
