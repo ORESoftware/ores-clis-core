@@ -22,7 +22,7 @@ Color is resolved independently per stream. Automatic color follows the destinat
 
 ## Environment contract
 
-The environment variables this SDK reads are declared as `[[env]]` entries in `.zpkg.toml`. That manifest is inventory/contract metadata: it documents the process inputs and library-owned defaults, but it does not turn `.zpkg.toml` into runtime policy or require Zed to inject ambient shell variables.
+The environment variables this SDK reads are declared in `.zpkg.toml` using Zed's package environment grammar: one `[env]` section plus one `[[env.vars]]` entry per variable. The manifest is inventory/contract metadata: it documents process inputs and library-owned defaults, but it does not turn `.zpkg.toml` into runtime policy or require Zed to inject ambient shell variables.
 
 | Variable | Default when absent | Effect |
 | --- | --- | --- |
