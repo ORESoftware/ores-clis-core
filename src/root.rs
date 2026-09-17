@@ -12,11 +12,13 @@ mod runtime;
 pub use runtime::*;
 
 mod args;
+mod lifecycle;
 mod protocol;
 mod reserved;
 mod shutdown;
 
 pub use args::{ParsedSharedArgs, SharedArgError, parse_shared_argv};
+pub use lifecycle::{ShutdownLifecycleGate, ShutdownLifecyclePhase};
 pub use protocol::{EmitDisposition, FlushPolicy, ProtocolEmitter, StreamRole, top_level_io};
 pub use reserved::parse_shared_argv_with_reserved;
 pub use shutdown::{
