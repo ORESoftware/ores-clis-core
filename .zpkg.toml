@@ -10,6 +10,11 @@ language = "rust"
 vcs = "git"
 url = "https://github.com/ORESoftware/ores-clis-core"
 
+# Zed's package manifest is the package/install authority. Ambient process
+# variables consumed by the SDK are documented in README.md and
+# docs/runtime-semantics.md because the current Zed manifest schema does not
+# define arbitrary environment-variable inventory entries.
+
 # Zed-level runtime/build package dependencies belong here. Rust crate
 # dependencies (serde_json plus target-specific signal support) remain declared
 # in Cargo.toml. ORESoftware/ores-interfaces provides cross-repo authority

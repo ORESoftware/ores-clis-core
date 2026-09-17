@@ -20,6 +20,22 @@ Color is resolved independently per stream. Automatic color follows the destinat
 
 `ores-clis-core` does not implement telemetry. `ores-otel` remains the logging/telemetry implementation authority, and consumers bridge the resolved shared log threshold into their logger without allowing log filtering to accidentally own primary command-result semantics.
 
+## Environment contract
+
+The environment variables this SDK reads are documented here and in `docs/runtime-semantics.md`. `.zpkg.toml` intentionally does not duplicate this inventory: the current Zed package-manifest schema does not define arbitrary ambient process-variable declarations, and Zed's environment-plan model describes manager/tool/system-package provenance rather than runtime process-input enumeration.
+
+| Variable | Default when absent | Effect |
+| --- | --- | --- |
+| `NO_COLOR` | no override | Presence disables automatic color; its value is ignored. |
+| `CLICOLOR` | no override | `0`, `false`, `no`, or `off` disables automatic color. |
+| `CLICOLOR_FORCE` | no override | Any non-empty value other than `0`, `false`, `no`, or `off` requests automatic color. |
+| `FORCE_COLOR` | no override | Same force-color semantics as `CLICOLOR_FORCE`. |
+| `TERM` | no override | `dumb` disables automatic color; other values do not change this library's color decision. |
+| `ORES_CLIS_SIGNAL_HANDLERS` | `true` | Controls whether an explicit signal-handler setup call installs handlers. |
+| `ORES_CLIS_SIGNAL_TTY_REQUIREMENT` | `stdin` | Chooses `stdin`, `stdin+stdout`, `stdin+stderr`, or `all` for interactive SIGINT eligibility; `stdin+stdout+stderr` is accepted as an alias for `all`. |
+
+The conventional terminal/color variables intentionally have no fabricated defaults because absence is semantically meaningful, especially for presence-based `NO_COLOR`. The two `ORES_CLIS_*` values are library-owned fallbacks applied by the runtime after an explicit setup call. Secret values belong at the secret-store/process-environment boundary, not in package metadata or committed documentation.
+
 ## Optional signal and Ctrl-D shutdown policy
 
 Signal handling is explicitly opt-in. Importing the crate does not replace the platform's normal SIGINT behavior; a consumer must call `setup_signal_handlers()` (or the callback variant) to install the shared policy.
@@ -47,7 +63,7 @@ stdin is intentionally authoritative because Ctrl-D is an input/EOF gesture. std
 Two environment switches are recognized when the setup function is called:
 
 - `ORES_CLIS_SIGNAL_HANDLERS=1|true|yes|on` enables installation and `0|false|no|off` disables it. The default is enabled **only after the consumer calls the setup function**.
-- `ORES_CLIS_SIGNAL_TTY_REQUIREMENT=stdin|stdin+stdout|stdin+stderr|all` tightens the TTY requirement for the interactive SIGINT path. stdin remains mandatory in every mode.
+- `ORES_CLIS_SIGNAL_TTY_REQUIREMENT=stdin|stdin+stdout|stdin+stderr|all` tightens the TTY requirement for the interactive SIGINT path. `stdin+stdout+stderr` is accepted as an alias for `all`; stdin remains mandatory in every mode.
 
 Consumers that need graceful cleanup should use `setup_signal_handlers_with(...)`. The callback is invoked at most once with `ShutdownReason` and owns the final shutdown action, allowing the CLI to flush logs, cancel work, drain resources, or coordinate an async runtime before exiting.
 
