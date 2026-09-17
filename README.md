@@ -20,6 +20,22 @@ Color is resolved independently per stream. Automatic color follows the destinat
 
 `ores-clis-core` does not implement telemetry. `ores-otel` remains the logging/telemetry implementation authority, and consumers bridge the resolved shared log threshold into their logger without allowing log filtering to accidentally own primary command-result semantics.
 
+## Environment contract
+
+The environment variables this SDK reads are declared as `[[env]]` entries in `.zpkg.toml`. That manifest is inventory/contract metadata: it documents the process inputs and library-owned defaults, but it does not turn `.zpkg.toml` into runtime policy or require Zed to inject ambient shell variables.
+
+| Variable | Default when absent | Effect |
+| --- | --- | --- |
+| `NO_COLOR` | no override | Presence disables automatic color; its value is ignored. |
+| `CLICOLOR` | no override | `0`, `false`, `no`, or `off` disables automatic color. |
+| `CLICOLOR_FORCE` | no override | Any non-empty value other than `0`, `false`, `no`, or `off` requests automatic color. |
+| `FORCE_COLOR` | no override | Same force-color semantics as `CLICOLOR_FORCE`. |
+| `TERM` | no override | `dumb` disables automatic color; other values do not change this library's color decision. |
+| `ORES_CLIS_SIGNAL_HANDLERS` | `true` | Controls whether an explicit signal-handler setup call installs handlers. |
+| `ORES_CLIS_SIGNAL_TTY_REQUIREMENT` | `stdin` | Chooses `stdin`, `stdin+stdout`, `stdin+stderr`, or `all` for interactive SIGINT eligibility; `stdin+stdout+stderr` is accepted as an alias for `all`. |
+
+The conventional terminal/color variables intentionally do not receive fabricated defaults in `.zpkg.toml`: absence is semantically different from presence for `NO_COLOR`, and the others are ambient terminal conventions rather than ORES-owned configuration. Secret values do not belong in this manifest.
+
 ## Optional signal and Ctrl-D shutdown policy
 
 Signal handling is explicitly opt-in. Importing the crate does not replace the platform's normal SIGINT behavior; a consumer must call `setup_signal_handlers()` (or the callback variant) to install the shared policy.
