@@ -36,6 +36,26 @@ A command with a genuinely different wire protocol may opt out, but the deviatio
 
 Per-record flushing is the default for terminals, pipes, and long-running streams. Bounded file-oriented commands may choose `FlushPolicy::OnDemand` and must flush explicitly before successful termination. Partial writes are handled through `Write::write_all`, and explicit flush failures are propagated.
 
+## Environment inventory and defaults
+
+`.zpkg.toml` carries a `[[env]]` inventory for every process environment variable read by this library. These entries reuse the ORES env-manifest vocabulary (`name`, `key`, `kind`, `required`, `secret`, `exposure`, `description`, `overrides`, `environments`, and optional `defaultValue`). The declaration is package/input metadata, not a second runtime configuration authority and not a plaintext secret store.
+
+The complete current inventory is:
+
+| Key | Library-owned fallback | Semantic target |
+| --- | --- | --- |
+| `NO_COLOR` | absent / no override | `environment_hints.no_color` |
+| `CLICOLOR` | absent / no override | `environment_hints.no_color` |
+| `CLICOLOR_FORCE` | absent / no override | `environment_hints.force_color` |
+| `FORCE_COLOR` | absent / no override | `environment_hints.force_color` |
+| `TERM` | absent / no override | `environment_hints.no_color` when equal to `dumb` |
+| `ORES_CLIS_SIGNAL_HANDLERS` | `true` | `signal_handlers.enabled` |
+| `ORES_CLIS_SIGNAL_TTY_REQUIREMENT` | `stdin` | `signal_handlers.tty_requirement` |
+
+The first five keys are established shell/terminal conventions. `ores-clis-core` reads them but does not own their ambient values, so `.zpkg.toml` must not fabricate defaults for them. This is particularly important for `NO_COLOR`: the code is presence-based, so setting an empty default would change behavior rather than describe it.
+
+The two `ORES_CLIS_*` keys are owned by this library, and their `defaultValue` entries mirror the code defaults. All seven entries are non-secret and `env-only`; secrets must stay in the secret-store/environment boundary rather than being given defaults in package metadata.
+
 ## Optional signal and interactive shutdown policy
 
 Signal interception is never implicit. Importing the crate leaves the operating system's normal signal behavior untouched; a CLI must explicitly call `setup_signal_handlers()` or `setup_signal_handlers_with(...)`.
@@ -50,7 +70,7 @@ The default installed policy is:
 
 stdin is the mandatory interactive signal because Ctrl-D is an input/EOF gesture. stdout and stderr TTY state may further restrict interactive handling, but they never substitute for non-TTY stdin. The supported stricter requirements are `stdin+stdout`, `stdin+stderr`, and `all`.
 
-`ORES_CLIS_SIGNAL_HANDLERS=0|false|no|off` disables an explicit setup call, while the true spellings `1|true|yes|on` enable it. `ORES_CLIS_SIGNAL_TTY_REQUIREMENT=stdin|stdin+stdout|stdin+stderr|all` controls the TTY requirement. Missing environment values preserve the default: setup enabled after an explicit function call, with stdin as the only required TTY.
+`ORES_CLIS_SIGNAL_HANDLERS=0|false|no|off` disables an explicit setup call, while the true spellings `1|true|yes|on` enable it. `ORES_CLIS_SIGNAL_TTY_REQUIREMENT=stdin|stdin+stdout|stdin+stderr|all` controls the TTY requirement; `stdin+stdout+stderr` is also accepted as an alias for `all`. Missing environment values preserve the default: setup enabled after an explicit function call, with stdin as the only required TTY.
 
 Consumers with cleanup work should use `setup_signal_handlers_with(...)`. Its callback is delivered at most once with a `ShutdownReason` and owns the final shutdown action; this is where consumers can flush `ores-otel`, cancel runtimes, drain workers, or otherwise perform graceful shutdown before exiting.
 
@@ -64,10 +84,11 @@ A Rust CLI adopting this crate should:
 4. route diagnostics and progress to stderr;
 5. add `trace` where the CLI exposes shared log levels;
 6. decide intentionally whether any legacy `silent` mode suppresses primary results or diagnostics only;
-7. keep `NO_COLOR`, `FORCE_COLOR`, and `CLICOLOR_FORCE` behavior in the shared resolver;
+7. keep `NO_COLOR`, `CLICOLOR`, `FORCE_COLOR`, `CLICOLOR_FORCE`, and `TERM` behavior in the shared resolver;
 8. treat a non-TTY stdout as JSON only where the command's compatibility contract allows it;
 9. classify top-level broken pipes without swallowing other I/O errors;
-10. call the shared signal setup only in CLIs that intentionally opt into Ctrl-D-confirmed interactive shutdown;
-11. keep `ores-otel` as the telemetry implementation rather than introducing a dependency cycle through this crate.
+10. keep the `.zpkg.toml` env inventory synchronized with every ambient variable read by this crate and never put secret values there;
+11. call the shared signal setup only in CLIs that intentionally opt into Ctrl-D-confirmed interactive shutdown;
+12. keep `ores-otel` as the telemetry implementation rather than introducing a dependency cycle through this crate.
 
 The authored TypeSpec and Draft 2020-12 JSON Schema remain independent peer authorities for wire shapes. TJSV is parity evidence between them and generated artifacts, not a replacement authority.
