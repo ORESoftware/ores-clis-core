@@ -421,11 +421,7 @@ fn request_force(
     }
 }
 
-fn handle_sigint(
-    interactive: bool,
-    state: &Arc<HandlerState>,
-    callback: &HandlerCallback,
-) {
+fn handle_sigint(interactive: bool, state: &Arc<HandlerState>, callback: &HandlerCallback) {
     match callback {
         HandlerCallback::Legacy(callback) => {
             if !interactive {
