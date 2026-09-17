@@ -25,6 +25,21 @@ pub const SIGNAL_TTY_REQUIREMENT_ENV: &str = "ORES_CLIS_SIGNAL_TTY_REQUIREMENT";
 static SIGNAL_HANDLERS_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 type ShutdownCallback = Arc<dyn Fn(ShutdownReason) + Send + Sync + 'static>;
+type LifecycleCallback = Arc<dyn Fn(ShutdownAction) + Send + Sync + 'static>;
+
+#[derive(Clone)]
+enum HandlerCallback {
+    Legacy(ShutdownCallback),
+    Lifecycle(LifecycleCallback),
+}
+
+#[derive(Default)]
+struct HandlerState {
+    ctrl_d_armed: AtomicBool,
+    shutdown_started: AtomicBool,
+    drain_started: AtomicBool,
+    force_started: AtomicBool,
+}
 
 /// Additional TTYs that may be required before SIGINT enters interactive mode.
 ///
@@ -73,14 +88,14 @@ impl FromStr for TtyRequirement {
     }
 }
 
-/// Reason passed to a custom shutdown callback.
+/// Reason associated with a signal/terminal shutdown event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShutdownReason {
     /// SIGINT, or the platform's Ctrl-C equivalent, requested shutdown.
     SigInt,
     /// SIGTERM requested shutdown.
     SigTerm,
-    /// Ctrl-D/EOF on stdin confirmed an interactive shutdown.
+    /// Ctrl-D/EOF on stdin confirmed or forced an interactive shutdown.
     CtrlD,
 }
 
@@ -96,6 +111,34 @@ impl ShutdownReason {
             Self::SigTerm => 143,
             Self::CtrlD => 0,
         }
+    }
+}
+
+/// Two-phase process lifecycle event for graceful servers and long-running CLIs.
+///
+/// `Drain` means stop accepting new work and begin graceful cleanup. `Force`
+/// means the operator explicitly requested escalation after draining started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShutdownAction {
+    /// Begin graceful draining. This event is emitted at most once.
+    Drain(ShutdownReason),
+    /// Escalate an already-started drain. This event is emitted at most once.
+    Force(ShutdownReason),
+}
+
+impl ShutdownAction {
+    /// Underlying operator/platform reason.
+    #[must_use]
+    pub const fn reason(self) -> ShutdownReason {
+        match self {
+            Self::Drain(reason) | Self::Force(reason) => reason,
+        }
+    }
+
+    /// Whether this action requests force escalation rather than graceful drain.
+    #[must_use]
+    pub const fn is_force(self) -> bool {
+        matches!(self, Self::Force(_))
     }
 }
 
@@ -151,7 +194,7 @@ impl SignalHandlerOptions {
         Ok(options)
     }
 
-    /// Return whether SIGINT should use Ctrl-D confirmation for this snapshot.
+    /// Return whether SIGINT should use Ctrl-D confirmation/force for this snapshot.
     #[must_use]
     pub fn interactive_sigint(self) -> bool {
         self.tty_requirement.is_satisfied(self.terminals)
@@ -221,23 +264,10 @@ impl std::error::Error for SignalHandlerError {}
 
 /// Install the default ORES CLI signal policy.
 ///
-/// This function is deliberately opt-in: importing `ores-clis-core` does not
-/// change process signal behavior. If the function is never called, SIGINT keeps
-/// the platform's default behavior.
-///
-/// When installed:
-/// - SIGINT with terminal-backed stdin logs `use Ctrl-D to shutdown process`,
-///   arms an stdin EOF/Ctrl-D waiter, and does not terminate on that SIGINT.
-/// - SIGINT without an eligible TTY logs a shutdown message and exits with 130.
-/// - SIGTERM always logs a shutdown message and exits with 143 on Unix.
-/// - Ctrl-D/EOF after an interactive SIGINT logs a shutdown message and exits 0.
-///
-/// `ORES_CLIS_SIGNAL_HANDLERS=0|false|no|off` makes an explicit call a no-op.
-///
-/// # Errors
-///
-/// Returns an error for invalid environment configuration or if the platform
-/// handler cannot be installed.
+/// This is the backward-compatible one-shot policy. Importing the crate does not
+/// change signal behavior. When explicitly installed, interactive SIGINT warns
+/// and arms Ctrl-D without exiting; Ctrl-D performs the one shutdown callback.
+/// Non-interactive SIGINT and SIGTERM shut down directly.
 pub fn setup_signal_handlers() -> Result<SignalHandlerStatus, SignalHandlerError> {
     let options = SignalHandlerOptions::from_env()?;
     setup_signal_handlers_with(options, |reason| {
@@ -245,17 +275,11 @@ pub fn setup_signal_handlers() -> Result<SignalHandlerStatus, SignalHandlerError
     })
 }
 
-/// Install the shared signal policy with a consumer-owned shutdown callback.
+/// Install the backward-compatible one-shot signal policy with a callback.
 ///
-/// The callback is invoked at most once and owns the final shutdown action. This
-/// is the integration point for consumers that need to flush logs, cancel async
-/// work, or perform other graceful cleanup rather than exiting immediately.
-/// Unlike [`setup_signal_handlers`], this function does not force an exit after
-/// the callback returns.
-///
-/// # Errors
-///
-/// Returns an error if the platform handler cannot be installed.
+/// The callback is invoked at most once. Interactive SIGINT is warning-only and
+/// Ctrl-D/EOF performs the callback, preserving the original CLI behavior.
+/// Graceful servers should use [`setup_signal_handlers_with_lifecycle`] instead.
 pub fn setup_signal_handlers_with<F>(
     options: SignalHandlerOptions,
     on_shutdown: F,
@@ -263,6 +287,37 @@ pub fn setup_signal_handlers_with<F>(
 where
     F: Fn(ShutdownReason) + Send + Sync + 'static,
 {
+    install_handlers(options, HandlerCallback::Legacy(Arc::new(on_shutdown)))
+}
+
+/// Install the two-phase graceful lifecycle policy with a consumer-owned callback.
+///
+/// Semantics:
+/// - interactive first SIGINT emits `Drain(SigInt)`, logs that Ctrl-D forces,
+///   and arms exactly one stdin Ctrl-D/EOF waiter;
+/// - repeated interactive SIGINT never escalates a drain;
+/// - Ctrl-D/EOF after that drain emits `Force(CtrlD)` at most once;
+/// - non-interactive SIGINT emits `Drain(SigInt)` directly;
+/// - SIGTERM emits `Drain(SigTerm)` on Unix and never implicitly forces;
+/// - failure to attach the Ctrl-D waiter leaves the already-started drain intact
+///   rather than converting an implementation failure into force termination.
+///
+/// This API is the intended bridge to HTTP/server drain coordinators such as
+/// `ores-middleware::ShutdownCoordinator`.
+pub fn setup_signal_handlers_with_lifecycle<F>(
+    options: SignalHandlerOptions,
+    on_action: F,
+) -> Result<SignalHandlerStatus, SignalHandlerError>
+where
+    F: Fn(ShutdownAction) + Send + Sync + 'static,
+{
+    install_handlers(options, HandlerCallback::Lifecycle(Arc::new(on_action)))
+}
+
+fn install_handlers(
+    options: SignalHandlerOptions,
+    callback: HandlerCallback,
+) -> Result<SignalHandlerStatus, SignalHandlerError> {
     if !options.enabled {
         return Ok(SignalHandlerStatus::Disabled);
     }
@@ -274,7 +329,6 @@ where
         return Ok(SignalHandlerStatus::AlreadyInstalled);
     }
 
-    let callback: ShutdownCallback = Arc::new(on_shutdown);
     if let Err(error) = install_platform_handler(options.interactive_sigint(), callback) {
         SIGNAL_HANDLERS_INSTALLED.store(false, Ordering::Release);
         return Err(error);
@@ -313,58 +367,137 @@ fn log_signal_message(message: &str) {
     let _ = stderr.flush();
 }
 
-fn request_shutdown(
-    shutdown_started: &AtomicBool,
+fn request_legacy_shutdown(
+    state: &HandlerState,
     callback: &ShutdownCallback,
     reason: ShutdownReason,
-) {
-    if shutdown_started
+) -> bool {
+    if state
+        .shutdown_started
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_ok()
     {
         callback(reason);
+        true
+    } else {
+        false
+    }
+}
+
+fn request_drain(
+    state: &HandlerState,
+    callback: &LifecycleCallback,
+    reason: ShutdownReason,
+) -> bool {
+    if state
+        .drain_started
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        callback(ShutdownAction::Drain(reason));
+        true
+    } else {
+        false
+    }
+}
+
+fn request_force(
+    state: &HandlerState,
+    callback: &LifecycleCallback,
+    reason: ShutdownReason,
+) -> bool {
+    if !state.drain_started.load(Ordering::Acquire) {
+        return false;
+    }
+    if state
+        .force_started
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        callback(ShutdownAction::Force(reason));
+        true
+    } else {
+        false
     }
 }
 
 fn handle_sigint(
     interactive: bool,
-    ctrl_d_armed: &Arc<AtomicBool>,
-    shutdown_started: &Arc<AtomicBool>,
-    callback: &ShutdownCallback,
+    state: &Arc<HandlerState>,
+    callback: &HandlerCallback,
 ) {
-    if !interactive {
-        log_signal_message("SIGINT received; shutting down process.");
-        request_shutdown(shutdown_started, callback, ShutdownReason::SigInt);
-        return;
+    match callback {
+        HandlerCallback::Legacy(callback) => {
+            if !interactive {
+                log_signal_message("SIGINT received; shutting down process.");
+                request_legacy_shutdown(state, callback, ShutdownReason::SigInt);
+                return;
+            }
+
+            log_signal_message("SIGINT received; use Ctrl-D to shutdown process.");
+            arm_ctrl_d_waiter(state, HandlerCallback::Legacy(Arc::clone(callback)));
+        }
+        HandlerCallback::Lifecycle(callback) => {
+            if !interactive {
+                log_signal_message("SIGINT received; beginning graceful shutdown.");
+                request_drain(state, callback, ShutdownReason::SigInt);
+                return;
+            }
+
+            let started = request_drain(state, callback, ShutdownReason::SigInt);
+            if started {
+                log_signal_message(
+                    "SIGINT received; beginning graceful shutdown; use Ctrl-D to force shutdown.",
+                );
+            } else {
+                log_signal_message("shutdown already draining; use Ctrl-D to force shutdown.");
+            }
+            arm_ctrl_d_waiter(state, HandlerCallback::Lifecycle(Arc::clone(callback)));
+        }
     }
+}
 
-    log_signal_message("SIGINT received; use Ctrl-D to shutdown process.");
-
-    if ctrl_d_armed
+fn arm_ctrl_d_waiter(state: &Arc<HandlerState>, callback: HandlerCallback) {
+    if state
+        .ctrl_d_armed
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
     {
         return;
     }
 
-    if let Err(error) = spawn_ctrl_d_waiter(Arc::clone(callback), Arc::clone(shutdown_started)) {
-        log_signal_message(&format!(
-            "could not attach Ctrl-D shutdown waiter ({error}); shutting down process."
-        ));
-        request_shutdown(shutdown_started, callback, ShutdownReason::SigInt);
+    if let Err(error) = spawn_ctrl_d_waiter(callback.clone(), Arc::clone(state)) {
+        match callback {
+            HandlerCallback::Legacy(callback) => {
+                log_signal_message(&format!(
+                    "could not attach Ctrl-D shutdown waiter ({error}); shutting down process."
+                ));
+                request_legacy_shutdown(state, &callback, ShutdownReason::SigInt);
+            }
+            HandlerCallback::Lifecycle(_) => {
+                log_signal_message(&format!(
+                    "could not attach Ctrl-D force waiter ({error}); graceful drain remains active."
+                ));
+            }
+        }
     }
 }
 
 #[cfg(unix)]
-fn handle_sigterm(shutdown_started: &Arc<AtomicBool>, callback: &ShutdownCallback) {
-    log_signal_message("SIGTERM received; shutting down process.");
-    request_shutdown(shutdown_started, callback, ShutdownReason::SigTerm);
+fn handle_sigterm(state: &Arc<HandlerState>, callback: &HandlerCallback) {
+    match callback {
+        HandlerCallback::Legacy(callback) => {
+            log_signal_message("SIGTERM received; shutting down process.");
+            request_legacy_shutdown(state, callback, ShutdownReason::SigTerm);
+        }
+        HandlerCallback::Lifecycle(callback) => {
+            log_signal_message("SIGTERM received; beginning graceful shutdown.");
+            request_drain(state, callback, ShutdownReason::SigTerm);
+        }
+    }
 }
 
-fn spawn_ctrl_d_waiter(
-    callback: ShutdownCallback,
-    shutdown_started: Arc<AtomicBool>,
-) -> io::Result<()> {
+fn spawn_ctrl_d_waiter(callback: HandlerCallback, state: Arc<HandlerState>) -> io::Result<()> {
     thread::Builder::new()
         .name("ores-cli-ctrl-d".to_owned())
         .spawn(move || {
@@ -375,22 +508,29 @@ fn spawn_ctrl_d_waiter(
             loop {
                 match input.read(&mut byte) {
                     Ok(0) => {
-                        log_signal_message("Ctrl-D/EOF received; shutting down process.");
-                        request_shutdown(&shutdown_started, &callback, ShutdownReason::CtrlD);
+                        handle_ctrl_d(&state, &callback, true);
                         return;
                     }
                     Ok(_) if byte[0] == 0x04 => {
-                        log_signal_message("Ctrl-D received; shutting down process.");
-                        request_shutdown(&shutdown_started, &callback, ShutdownReason::CtrlD);
+                        handle_ctrl_d(&state, &callback, false);
                         return;
                     }
                     Ok(_) => {}
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                     Err(error) => {
-                        log_signal_message(&format!(
-                            "stdin failed while waiting for Ctrl-D ({error}); shutting down process."
-                        ));
-                        request_shutdown(&shutdown_started, &callback, ShutdownReason::SigInt);
+                        match &callback {
+                            HandlerCallback::Legacy(callback) => {
+                                log_signal_message(&format!(
+                                    "stdin failed while waiting for Ctrl-D ({error}); shutting down process."
+                                ));
+                                request_legacy_shutdown(&state, callback, ShutdownReason::SigInt);
+                            }
+                            HandlerCallback::Lifecycle(_) => {
+                                log_signal_message(&format!(
+                                    "stdin failed while waiting for Ctrl-D ({error}); graceful drain remains active."
+                                ));
+                            }
+                        }
                         return;
                     }
                 }
@@ -399,10 +539,31 @@ fn spawn_ctrl_d_waiter(
         .map(|_| ())
 }
 
+fn handle_ctrl_d(state: &HandlerState, callback: &HandlerCallback, eof: bool) {
+    match callback {
+        HandlerCallback::Legacy(callback) => {
+            log_signal_message(if eof {
+                "Ctrl-D/EOF received; shutting down process."
+            } else {
+                "Ctrl-D received; shutting down process."
+            });
+            request_legacy_shutdown(state, callback, ShutdownReason::CtrlD);
+        }
+        HandlerCallback::Lifecycle(callback) => {
+            log_signal_message(if eof {
+                "Ctrl-D/EOF received; forcing shutdown process."
+            } else {
+                "Ctrl-D received; forcing shutdown process."
+            });
+            request_force(state, callback, ShutdownReason::CtrlD);
+        }
+    }
+}
+
 #[cfg(unix)]
 fn install_platform_handler(
     interactive: bool,
-    callback: ShutdownCallback,
+    callback: HandlerCallback,
 ) -> Result<(), SignalHandlerError> {
     use signal_hook::consts::signal::{SIGINT, SIGTERM};
     use signal_hook::iterator::Signals;
@@ -411,18 +572,15 @@ fn install_platform_handler(
         Signals::new([SIGINT, SIGTERM]).map_err(|error| SignalHandlerError::Install {
             message: error.to_string(),
         })?;
-    let ctrl_d_armed = Arc::new(AtomicBool::new(false));
-    let shutdown_started = Arc::new(AtomicBool::new(false));
+    let state = Arc::new(HandlerState::default());
 
     thread::Builder::new()
         .name("ores-cli-signals".to_owned())
         .spawn(move || {
             for signal in signals.forever() {
                 match signal {
-                    SIGINT => {
-                        handle_sigint(interactive, &ctrl_d_armed, &shutdown_started, &callback)
-                    }
-                    SIGTERM => handle_sigterm(&shutdown_started, &callback),
+                    SIGINT => handle_sigint(interactive, &state, &callback),
+                    SIGTERM => handle_sigterm(&state, &callback),
                     _ => {}
                 }
             }
@@ -436,13 +594,12 @@ fn install_platform_handler(
 #[cfg(windows)]
 fn install_platform_handler(
     interactive: bool,
-    callback: ShutdownCallback,
+    callback: HandlerCallback,
 ) -> Result<(), SignalHandlerError> {
-    let ctrl_d_armed = Arc::new(AtomicBool::new(false));
-    let shutdown_started = Arc::new(AtomicBool::new(false));
+    let state = Arc::new(HandlerState::default());
 
     ctrlc::try_set_handler(move || {
-        handle_sigint(interactive, &ctrl_d_armed, &shutdown_started, &callback);
+        handle_sigint(interactive, &state, &callback);
     })
     .map_err(|error| SignalHandlerError::Install {
         message: error.to_string(),
@@ -452,7 +609,7 @@ fn install_platform_handler(
 #[cfg(not(any(unix, windows)))]
 fn install_platform_handler(
     _interactive: bool,
-    _callback: ShutdownCallback,
+    _callback: HandlerCallback,
 ) -> Result<(), SignalHandlerError> {
     Err(SignalHandlerError::UnsupportedPlatform)
 }
@@ -460,6 +617,7 @@ fn install_platform_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     #[test]
     fn default_interactive_policy_is_driven_by_stdin() {
@@ -500,11 +658,11 @@ mod tests {
     }
 
     #[test]
-    fn enabled_switch_accepts_common_boolean_spellings() {
-        for enabled in ["1", "true", "yes", "on"] {
+    fn enabled_switch_accepts_common_boolean_spellings_and_whitespace() {
+        for enabled in ["1", "true", "yes", "on", " TRUE "] {
             assert!(parse_enabled(enabled).expect("enabled value"));
         }
-        for disabled in ["0", "false", "no", "off"] {
+        for disabled in ["0", "false", "no", "off", " OFF "] {
             assert!(!parse_enabled(disabled).expect("disabled value"));
         }
         assert!(parse_enabled("maybe").is_err());
@@ -528,6 +686,129 @@ mod tests {
             "all".parse::<TtyRequirement>().expect("all"),
             TtyRequirement::All
         );
+        assert_eq!(
+            " stdin+stdout+stderr "
+                .parse::<TtyRequirement>()
+                .expect("all alias"),
+            TtyRequirement::All
+        );
         assert!("stdout".parse::<TtyRequirement>().is_err());
+    }
+
+    #[test]
+    fn shutdown_action_exposes_reason_and_force_semantics() {
+        let drain = ShutdownAction::Drain(ShutdownReason::SigInt);
+        assert_eq!(drain.reason(), ShutdownReason::SigInt);
+        assert!(!drain.is_force());
+        let force = ShutdownAction::Force(ShutdownReason::CtrlD);
+        assert_eq!(force.reason(), ShutdownReason::CtrlD);
+        assert!(force.is_force());
+    }
+
+    #[test]
+    fn lifecycle_drain_is_emitted_once() {
+        let state = HandlerState::default();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&events);
+        let callback: LifecycleCallback = Arc::new(move |action| {
+            captured.lock().expect("events lock").push(action);
+        });
+
+        assert!(request_drain(&state, &callback, ShutdownReason::SigInt));
+        assert!(!request_drain(&state, &callback, ShutdownReason::SigTerm));
+        assert_eq!(
+            *events.lock().expect("events lock"),
+            vec![ShutdownAction::Drain(ShutdownReason::SigInt)]
+        );
+    }
+
+    #[test]
+    fn lifecycle_force_requires_prior_drain_and_is_emitted_once() {
+        let state = HandlerState::default();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&events);
+        let callback: LifecycleCallback = Arc::new(move |action| {
+            captured.lock().expect("events lock").push(action);
+        });
+
+        assert!(!request_force(&state, &callback, ShutdownReason::CtrlD));
+        assert!(request_drain(&state, &callback, ShutdownReason::SigInt));
+        assert!(request_force(&state, &callback, ShutdownReason::CtrlD));
+        assert!(!request_force(&state, &callback, ShutdownReason::CtrlD));
+        assert_eq!(
+            *events.lock().expect("events lock"),
+            vec![
+                ShutdownAction::Drain(ShutdownReason::SigInt),
+                ShutdownAction::Force(ShutdownReason::CtrlD),
+            ]
+        );
+    }
+
+    #[test]
+    fn noninteractive_lifecycle_sigint_starts_drain_without_force() {
+        let state = Arc::new(HandlerState::default());
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&events);
+        let callback = HandlerCallback::Lifecycle(Arc::new(move |action| {
+            captured.lock().expect("events lock").push(action);
+        }));
+
+        handle_sigint(false, &state, &callback);
+        assert!(state.drain_started.load(Ordering::Acquire));
+        assert!(!state.force_started.load(Ordering::Acquire));
+        assert_eq!(
+            *events.lock().expect("events lock"),
+            vec![ShutdownAction::Drain(ShutdownReason::SigInt)]
+        );
+    }
+
+    #[test]
+    fn ctrl_d_force_path_does_not_repeat() {
+        let state = HandlerState::default();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&events);
+        let callback = HandlerCallback::Lifecycle(Arc::new(move |action| {
+            captured.lock().expect("events lock").push(action);
+        }));
+        let lifecycle = match &callback {
+            HandlerCallback::Lifecycle(callback) => callback,
+            HandlerCallback::Legacy(_) => unreachable!(),
+        };
+
+        request_drain(&state, lifecycle, ShutdownReason::SigInt);
+        handle_ctrl_d(&state, &callback, false);
+        handle_ctrl_d(&state, &callback, true);
+        assert_eq!(
+            *events.lock().expect("events lock"),
+            vec![
+                ShutdownAction::Drain(ShutdownReason::SigInt),
+                ShutdownAction::Force(ShutdownReason::CtrlD),
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_shutdown_callback_remains_one_shot() {
+        let state = HandlerState::default();
+        let reasons = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&reasons);
+        let callback: ShutdownCallback = Arc::new(move |reason| {
+            captured.lock().expect("reasons lock").push(reason);
+        });
+
+        assert!(request_legacy_shutdown(
+            &state,
+            &callback,
+            ShutdownReason::SigInt
+        ));
+        assert!(!request_legacy_shutdown(
+            &state,
+            &callback,
+            ShutdownReason::CtrlD
+        ));
+        assert_eq!(
+            *reasons.lock().expect("reasons lock"),
+            vec![ShutdownReason::SigInt]
+        );
     }
 }
