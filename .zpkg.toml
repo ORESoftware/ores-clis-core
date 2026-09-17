@@ -10,65 +10,10 @@ language = "rust"
 vcs = "git"
 url = "https://github.com/ORESoftware/ores-clis-core"
 
-# Package environment declarations describe values this SDK may read. They do
-# not instruct Zed to inject ambient shell state. Conventional terminal/color
-# variables intentionally have no defaults because absence is semantically
-# meaningful. Library-owned signal settings mirror their code fallbacks.
-[env]
-strict = false
-
-[[env.vars]]
-name = "NO_COLOR"
-type = "string"
-required = false
-secret = false
-description = "Presence disables automatic color; the value itself is ignored. Absent means no NO_COLOR override."
-
-[[env.vars]]
-name = "CLICOLOR"
-type = "string"
-required = false
-secret = false
-description = "0, false, no, or off disable automatic color. Other values do not force color."
-
-[[env.vars]]
-name = "CLICOLOR_FORCE"
-type = "string"
-required = false
-secret = false
-description = "Any non-empty value except 0, false, no, or off requests automatic color."
-
-[[env.vars]]
-name = "FORCE_COLOR"
-type = "string"
-required = false
-secret = false
-description = "Any non-empty value except 0, false, no, or off requests automatic color."
-
-[[env.vars]]
-name = "TERM"
-type = "string"
-required = false
-secret = false
-description = "TERM=dumb disables automatic color; all other values leave terminal color policy unchanged."
-
-[[env.vars]]
-name = "ORES_CLIS_SIGNAL_HANDLERS"
-type = "string"
-required = false
-secret = false
-default = "true"
-enum = ["1", "true", "yes", "on", "0", "false", "no", "off"]
-description = "Controls whether an explicit setup_signal_handlers call installs handlers."
-
-[[env.vars]]
-name = "ORES_CLIS_SIGNAL_TTY_REQUIREMENT"
-type = "string"
-required = false
-secret = false
-default = "stdin"
-enum = ["stdin", "stdin+stdout", "stdin+stderr", "all", "stdin+stdout+stderr"]
-description = "TTY requirement for interactive SIGINT handling; stdin+stdout+stderr is an alias for all."
+# Zed's package manifest is the package/install authority. Ambient process
+# variables consumed by the SDK are documented in README.md and
+# docs/runtime-semantics.md because the current Zed manifest schema does not
+# define arbitrary environment-variable inventory entries.
 
 # Zed-level runtime/build package dependencies belong here. Rust crate
 # dependencies (serde_json plus target-specific signal support) remain declared
