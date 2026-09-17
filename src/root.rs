@@ -20,7 +20,7 @@ pub use args::{ParsedSharedArgs, SharedArgError, parse_shared_argv};
 pub use protocol::{EmitDisposition, FlushPolicy, ProtocolEmitter, StreamRole, top_level_io};
 pub use reserved::parse_shared_argv_with_reserved;
 pub use shutdown::{
-    SIGNAL_HANDLERS_ENV, SIGNAL_TTY_REQUIREMENT_ENV, ShutdownReason, SignalHandlerError,
-    SignalHandlerOptions, SignalHandlerStatus, TtyRequirement, setup_signal_handlers,
-    setup_signal_handlers_with,
+    SIGNAL_HANDLERS_ENV, SIGNAL_TTY_REQUIREMENT_ENV, ShutdownAction, ShutdownReason,
+    SignalHandlerError, SignalHandlerOptions, SignalHandlerStatus, TtyRequirement,
+    setup_signal_handlers, setup_signal_handlers_with, setup_signal_handlers_with_lifecycle,
 };
