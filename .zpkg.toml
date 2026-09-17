@@ -10,6 +10,91 @@ language = "rust"
 vcs = "git"
 url = "https://github.com/ORESoftware/ores-clis-core"
 
+# Environment declarations are metadata about values this SDK reads; they are
+# not an instruction for Zed to inject ambient shell state. Non-secret defaults
+# are declared only where ores-clis-core itself owns the fallback semantics.
+# Conventional terminal/color variables deliberately have no defaultValue:
+# absence means "no environment override" and must remain distinguishable from
+# a variable that is present with an empty or falsey value.
+[[env]]
+name = "no_color"
+key = "NO_COLOR"
+kind = "string"
+required = false
+secret = false
+exposure = "env-only"
+description = "Presence disables automatic color; the value itself is ignored. Absent means no NO_COLOR override."
+overrides = ["environment_hints.no_color"]
+environments = ["dev", "stage", "prod"]
+
+[[env]]
+name = "clicolor"
+key = "CLICOLOR"
+kind = "string"
+required = false
+secret = false
+exposure = "env-only"
+description = "Falsey values 0, false, no, and off disable automatic color. Other values do not force color."
+overrides = ["environment_hints.no_color"]
+environments = ["dev", "stage", "prod"]
+
+[[env]]
+name = "clicolor_force"
+key = "CLICOLOR_FORCE"
+kind = "string"
+required = false
+secret = false
+exposure = "env-only"
+description = "Any non-empty value except 0, false, no, or off requests automatic color."
+overrides = ["environment_hints.force_color"]
+environments = ["dev", "stage", "prod"]
+
+[[env]]
+name = "force_color"
+key = "FORCE_COLOR"
+kind = "string"
+required = false
+secret = false
+exposure = "env-only"
+description = "Any non-empty value except 0, false, no, or off requests automatic color."
+overrides = ["environment_hints.force_color"]
+environments = ["dev", "stage", "prod"]
+
+[[env]]
+name = "term"
+key = "TERM"
+kind = "string"
+required = false
+secret = false
+exposure = "env-only"
+description = "TERM=dumb disables automatic color; all other values leave terminal color policy unchanged."
+overrides = ["environment_hints.no_color"]
+environments = ["dev", "stage", "prod"]
+
+[[env]]
+name = "signal_handlers"
+key = "ORES_CLIS_SIGNAL_HANDLERS"
+kind = "bool"
+required = false
+secret = false
+exposure = "env-only"
+description = "Controls whether an explicit setup_signal_handlers call installs handlers. Accepted true spellings: 1, true, yes, on; false: 0, false, no, off."
+overrides = ["signal_handlers.enabled"]
+environments = ["dev", "stage", "prod"]
+defaultValue = "true"
+
+[[env]]
+name = "signal_tty_requirement"
+key = "ORES_CLIS_SIGNAL_TTY_REQUIREMENT"
+kind = "string"
+required = false
+secret = false
+exposure = "env-only"
+description = "TTY requirement for interactive SIGINT handling: stdin, stdin+stdout, stdin+stderr, all; stdin+stdout+stderr is accepted as an alias for all."
+overrides = ["signal_handlers.tty_requirement"]
+environments = ["dev", "stage", "prod"]
+defaultValue = "stdin"
+
 # Zed-level runtime/build package dependencies belong here. Rust crate
 # dependencies (serde_json plus target-specific signal support) remain declared
 # in Cargo.toml. ORESoftware/ores-interfaces provides cross-repo authority
