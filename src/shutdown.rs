@@ -355,6 +355,7 @@ fn handle_sigint(
     }
 }
 
+#[cfg(unix)]
 fn handle_sigterm(shutdown_started: &Arc<AtomicBool>, callback: &ShutdownCallback) {
     log_signal_message("SIGTERM received; shutting down process.");
     request_shutdown(shutdown_started, callback, ShutdownReason::SigTerm);
