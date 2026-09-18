@@ -115,7 +115,10 @@ mod tests {
 
     #[test]
     fn registered_runtime_names_are_unique() {
-        let names = REGISTERED_RUNTIME_CONFIGS.iter().copied().collect::<BTreeSet<_>>();
+        let names = REGISTERED_RUNTIME_CONFIGS
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
         assert_eq!(names.len(), REGISTERED_RUNTIME_CONFIGS.len());
     }
 
