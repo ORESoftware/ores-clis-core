@@ -1,7 +1,7 @@
 [package]
 org = "oresoftware"
 name = "ores-clis-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Shared Rust CLI runtime policy for terminal-aware output, signals, log levels, and streaming"
 license = "MIT"
 language = "rust"
