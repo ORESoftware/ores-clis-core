@@ -117,37 +117,45 @@ jobs:
       - name: Validate package metadata
         run: zed validate
 
-      - name: Pack exact candidate artifact
+      - name: Pack exact candidate artifacts
         env:
           ZED_PACK_OUT: ${{ runner.temp }}/ores-clis-core-zed
         run: |
           set -euo pipefail
           zed pack --out "$ZED_PACK_OUT"
-          test "$(find "$ZED_PACK_OUT" -maxdepth 1 -name '*.tar.gz' -type f | wc -l)" -eq 1
+          test "$(find "$ZED_PACK_OUT" -maxdepth 1 -name '*.tar.gz' -type f | wc -l)" -eq 3
+          test "$(find "$ZED_PACK_OUT" -maxdepth 1 -name 'oresoftware-ores-clis-core-[0-9]*.tar.gz' -type f | wc -l)" -eq 1
+          test "$(find "$ZED_PACK_OUT" -maxdepth 1 -name 'oresoftware-ores-clis-core-contracts-[0-9]*.tar.gz' -type f | wc -l)" -eq 1
+          test "$(find "$ZED_PACK_OUT" -maxdepth 1 -name 'oresoftware-ores-clis-core-conformance-[0-9]*.tar.gz' -type f | wc -l)" -eq 1
 
       - name: Inspect artifact allowlist and denylist
         env:
           ZED_PACK_OUT: ${{ runner.temp }}/ores-clis-core-zed
         run: |
           set -euo pipefail
-          archive="$(find "$ZED_PACK_OUT" -maxdepth 1 -name '*.tar.gz' -type f -print -quit)"
+          archive="$(find "$ZED_PACK_OUT" -maxdepth 1 -name 'oresoftware-ores-clis-core-[0-9]*.tar.gz' -type f -print -quit)"
+          test -n "$archive"
           tar -tzf "$archive" > "$RUNNER_TEMP/package-files.txt"
           grep -Fx 'pkg/.zpkg.toml' "$RUNNER_TEMP/package-files.txt"
           grep -Fx 'pkg/Cargo.toml' "$RUNNER_TEMP/package-files.txt"
           grep -Fx 'pkg/src/root.rs' "$RUNNER_TEMP/package-files.txt"
           grep -Fx 'pkg/contracts/cli-runtime/v1/main.tsp' "$RUNNER_TEMP/package-files.txt"
           grep -Fx 'pkg/contracts/cli-runtime/v1/authored.schema.json' "$RUNNER_TEMP/package-files.txt"
-          if grep -E '(^|/)(\.github|target|tmp|\.contract|\.typespec-json-schema-validator)(/|$)|\.log$' "$RUNNER_TEMP/package-files.txt"; then
-            echo 'forbidden build, CI, or scratch material leaked into package' >&2
-            exit 1
-          fi
+          for candidate in "$ZED_PACK_OUT"/*.tar.gz; do
+            tar -tzf "$candidate" > "$RUNNER_TEMP/candidate-files.txt"
+            if grep -E '(^|/)(\.github|target|tmp|\.contract|\.typespec-json-schema-validator)(/|$)|\.log$' "$RUNNER_TEMP/candidate-files.txt"; then
+              echo "forbidden build, CI, or scratch material leaked into $candidate" >&2
+              exit 1
+            fi
+          done
 
       - name: Build unpacked artifact as a clean crate
         env:
           ZED_PACK_OUT: ${{ runner.temp }}/ores-clis-core-zed
         run: |
           set -euo pipefail
-          archive="$(find "$ZED_PACK_OUT" -maxdepth 1 -name '*.tar.gz' -type f -print -quit)"
+          archive="$(find "$ZED_PACK_OUT" -maxdepth 1 -name 'oresoftware-ores-clis-core-[0-9]*.tar.gz' -type f -print -quit)"
+          test -n "$archive"
           consumer="$(mktemp -d)"
           tar -xzf "$archive" -C "$consumer"
           cargo check --manifest-path "$consumer/pkg/Cargo.toml" --lib
@@ -155,7 +163,7 @@ jobs:
       - name: Roundtrip artifact through Zed consumer smoke
         run: zed r2g
 
-      - name: Upload admitted candidate artifact
+      - name: Upload admitted candidate artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ores-clis-core-zed-${{ github.event.pull_request.head.sha || github.sha }}
