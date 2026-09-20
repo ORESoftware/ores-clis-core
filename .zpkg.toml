@@ -58,4 +58,3 @@ exclude = [
 
 [scripts]
 test = "sh conformance/check.sh && cargo test --all-targets && tjsv check --typespec=contracts/cli-runtime/v1/main.tsp --schema=contracts/cli-runtime/v1/authored.schema.json --report=.typespec-json-schema-validator/cli-runtime-v1/report.json"
-conformance = "sh conformance/check.sh"
