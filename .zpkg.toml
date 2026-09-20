@@ -31,6 +31,14 @@ dir = ".vendor/.zed"
 dir = "."
 adapter = "rust"
 
+[targets.contracts]
+dir = "contracts"
+adapter = "none"
+
+[targets.conformance]
+dir = "conformance"
+adapter = "none"
+
 [publish]
 include_readme = true
 tag_format = "v{version}"
@@ -49,4 +57,5 @@ exclude = [
 # be encoded as a target/root native route here.
 
 [scripts]
-test = "cargo test --all-targets && tjsv check --typespec=contracts/cli-runtime/v1/main.tsp --schema=contracts/cli-runtime/v1/authored.schema.json --report=.typespec-json-schema-validator/cli-runtime-v1/report.json"
+test = "sh conformance/check.sh && cargo test --all-targets && tjsv check --typespec=contracts/cli-runtime/v1/main.tsp --schema=contracts/cli-runtime/v1/authored.schema.json --report=.typespec-json-schema-validator/cli-runtime-v1/report.json"
+conformance = "sh conformance/check.sh"
