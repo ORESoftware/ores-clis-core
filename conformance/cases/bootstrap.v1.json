@@ -1,0 +1,18 @@
+{
+  "schema": "ores.conformance.bootstrap/v1",
+  "repository": "ORESoftware/ores-clis-core",
+  "id": "authority-boundary",
+  "contractRoot": "contracts/",
+  "status": "bootstrap-only",
+  "expected": {
+    "contractsRemainAuthoritative": true,
+    "conformanceIsSharedAcrossImplementations": true,
+    "runtimeSpecificGoldensAllowed": false,
+    "staleEvidenceAccepted": false,
+    "missingRequiredRuntimeEvidenceAccepted": false
+  },
+  "notes": [
+    "This bootstrap case establishes the repository-level conformance boundary only.",
+    "Add CLI/runtime-specific input and normalized-receipt cases before claiming behavioral equivalence."
+  ]
+}
