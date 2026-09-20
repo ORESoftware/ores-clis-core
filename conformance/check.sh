@@ -15,7 +15,18 @@ for boundary in contracts conformance; do
 done
 escaped=$(find contracts conformance -type l -print -quit 2>/dev/null || true)
 [ -z "$escaped" ] || fail "symbolic links are not allowed inside contract/conformance boundaries: $escaped"
-echo "[zed-conformance] structural boundary check passed"
+
+# Lifecycle wiring is part of conformance: these boundaries may not be decorative.
+grep -q 'conformance/check.sh' .zpkg.toml || fail ".zpkg.toml must invoke conformance/check.sh"
+for phase in post-install pre-build pre-pack pre-publish; do
+  hook=".zpkg/hooks/$phase.bash"
+  [ -f "$hook" ] || fail "missing Zed lifecycle hook: $hook"
+  grep -q 'conformance/check.sh' "$hook" || fail "$hook must invoke conformance/check.sh"
+done
+[ -f .githooks/pre-push ] || fail "missing tracked Git pre-push hook"
+grep -q 'conformance/check.sh' .githooks/pre-push || fail ".githooks/pre-push must invoke conformance/check.sh"
+
+echo "[zed-conformance] structural and lifecycle wiring checks passed"
 [ "$mode" = full ] || exit 0
 command -v node >/dev/null 2>&1 || fail "node is required to run conformance/check.mjs"
 [ -f conformance/check.mjs ] || fail "missing mature conformance runner conformance/check.mjs"
