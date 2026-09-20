@@ -12,6 +12,16 @@ pub const ORES_MW_CONFIG: &str = ".ores-mw.toml";
 pub const ORES_RL_CONFIG: &str = ".ores-rl.toml";
 /// Canonical repository-root LRU/cache contract.
 pub const ORES_LRU_CONFIG: &str = ".ores-lru.toml";
+/// Canonical repository-root SOPS / encrypted configuration binding.
+pub const ORES_SOPS_CONFIG: &str = ".ores-sops.toml";
+/// Canonical repository-root drag-and-drop contract binding.
+pub const ORES_DND_CONFIG: &str = ".ores-dnd.toml";
+/// Canonical repository-root WebSocket contract binding.
+pub const ORES_WS_CONFIG: &str = ".ores-ws.toml";
+/// Canonical repository-root service-worker contract binding.
+pub const ORES_SW_CONFIG: &str = ".ores-sw.toml";
+/// Canonical repository-root sidecar contract.
+pub const ORES_SIDECAR_CONFIG: &str = ".ores-sidecar.toml";
 /// Canonical repository-root Shared Auth binding.
 pub const SHARED_AUTH_CONFIG: &str = ".shared-auth.toml";
 /// Compatibility-only Shared Auth spelling. It must not coexist with the canonical file.
@@ -31,13 +41,17 @@ pub const REGISTERED_RUNTIME_CONFIGS: &[&str] = &[
     ORES_MW_CONFIG,
     ORES_RL_CONFIG,
     ORES_LRU_CONFIG,
+    ORES_SOPS_CONFIG,
+    ORES_DND_CONFIG,
+    ORES_WS_CONFIG,
+    ORES_SW_CONFIG,
     ".ores-lock.toml",
     SHARED_AUTH_CONFIG,
     SHARED_AUTH_COMPAT_CONFIG,
     ".ores-rpc.toml",
     ".ores-legal.toml",
     ".ores-wasm.toml",
-    ".ores-sidecar.toml",
+    ORES_SIDECAR_CONFIG,
     ".ores-infra.toml",
     ".indiebuild.toml",
     ".canonical-cfg.toml",
@@ -88,6 +102,31 @@ pub const ROOT_CONFIG_IDENTITIES: &[RootConfigIdentity] = &[
         compatibility_aliases: &[],
     },
     RootConfigIdentity {
+        concern: "ores-sops",
+        canonical: ORES_SOPS_CONFIG,
+        compatibility_aliases: &[],
+    },
+    RootConfigIdentity {
+        concern: "ores-dnd",
+        canonical: ORES_DND_CONFIG,
+        compatibility_aliases: &[],
+    },
+    RootConfigIdentity {
+        concern: "ores-websocket",
+        canonical: ORES_WS_CONFIG,
+        compatibility_aliases: &[],
+    },
+    RootConfigIdentity {
+        concern: "ores-service-worker",
+        canonical: ORES_SW_CONFIG,
+        compatibility_aliases: &[],
+    },
+    RootConfigIdentity {
+        concern: "ores-sidecar",
+        canonical: ORES_SIDECAR_CONFIG,
+        compatibility_aliases: &[],
+    },
+    RootConfigIdentity {
         concern: "shared-auth",
         canonical: SHARED_AUTH_CONFIG,
         compatibility_aliases: &[SHARED_AUTH_COMPAT_CONFIG],
@@ -133,6 +172,25 @@ mod tests {
                 .canonical,
             ".opto-sync.toml"
         );
+    }
+
+    #[test]
+    fn server_runtime_config_names_are_canonical_and_registered() {
+        for (concern, expected) in [
+            ("ores-middleware", ".ores-mw.toml"),
+            ("ores-sops", ".ores-sops.toml"),
+            ("ores-dnd", ".ores-dnd.toml"),
+            ("ores-websocket", ".ores-ws.toml"),
+            ("ores-service-worker", ".ores-sw.toml"),
+            ("ores-sidecar", ".ores-sidecar.toml"),
+        ] {
+            let identity = root_config_identity(concern).expect("runtime config identity");
+            assert_eq!(identity.canonical, expected);
+            assert!(
+                is_registered_runtime_config(expected),
+                "{expected} must be in REGISTERED_RUNTIME_CONFIGS"
+            );
+        }
     }
 
     #[test]
