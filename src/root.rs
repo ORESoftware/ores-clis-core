@@ -24,10 +24,11 @@ pub use lifecycle::{ShutdownLifecycleGate, ShutdownLifecyclePhase};
 pub use protocol::{EmitDisposition, FlushPolicy, ProtocolEmitter, StreamRole, top_level_io};
 pub use reserved::parse_shared_argv_with_reserved;
 pub use root_config_registry::{
-    CLI_FLAGS_CONFIG, OPTO_SYNC_CONFIG, ORES_LRU_CONFIG, ORES_MW_CONFIG, ORES_OTEL_CONFIG,
-    ORES_RL_CONFIG, REGISTERED_RUNTIME_CONFIGS, ROOT_CONFIG_IDENTITIES, RootConfigIdentity,
-    SHARED_AUTH_COMPAT_CONFIG, SHARED_AUTH_CONFIG, is_registered_runtime_config,
-    root_config_identity,
+    CLI_FLAGS_CONFIG, EXECUTABLE_RUNTIME_CONFIG_OWNERS, ExecutableRuntimeConfigOwner,
+    OPTO_SYNC_CONFIG, ORES_LRU_CONFIG, ORES_MW_CONFIG, ORES_OTEL_CONFIG, ORES_RL_CONFIG,
+    ORES_SW_CONFIG, ORES_WS_CONFIG, REGISTERED_RUNTIME_CONFIGS, ROOT_CONFIG_IDENTITIES,
+    RootConfigIdentity, SHARED_AUTH_COMPAT_CONFIG, SHARED_AUTH_CONFIG,
+    executable_runtime_config_owner, is_registered_runtime_config, root_config_identity,
 };
 pub use shutdown::{
     SIGNAL_HANDLERS_ENV, SIGNAL_TTY_REQUIREMENT_ENV, ShutdownAction, ShutdownReason,
