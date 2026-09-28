@@ -276,7 +276,9 @@ fn execute(config: SelfUpdateConfig, args: &CliArgs) -> Result<SelfUpdateOutcome
 
     let current_exe = env::current_exe()
         .map_err(|error| SelfUpdateError::new(format!("locate current executable: {error}")))?;
-    let backup = temp.path().join(format!("{}.backup", executable_name(config.binary_name)));
+    let backup = temp
+        .path()
+        .join(format!("{}.backup", executable_name(config.binary_name)));
     fs::copy(&current_exe, &backup)
         .map_err(|error| SelfUpdateError::new(format!("backup current executable: {error}")))?;
 
@@ -352,7 +354,11 @@ fn github_token() -> Option<String> {
     return env::var("GITHUB_TOKEN")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .or_else(|| env::var("GH_TOKEN").ok().filter(|value| !value.trim().is_empty()));
+        .or_else(|| {
+            env::var("GH_TOKEN")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        });
 }
 
 fn select_asset(
@@ -499,11 +505,11 @@ fn find_checksum_asset<'a>(
         format!("{}.sha256.txt", selected.name),
     ];
 
-    if let Some(asset) = release
-        .assets
-        .iter()
-        .find(|asset| direct_names.iter().any(|name| asset.name.eq_ignore_ascii_case(name)))
-    {
+    if let Some(asset) = release.assets.iter().find(|asset| {
+        direct_names
+            .iter()
+            .any(|name| asset.name.eq_ignore_ascii_case(name))
+    }) {
         return Some(asset);
     }
 
@@ -623,7 +629,10 @@ fn extract_zip_binary(
         if entry.is_dir() {
             continue;
         }
-        let Some(name) = Path::new(entry.name()).file_name().and_then(|value| value.to_str()) else {
+        let Some(name) = Path::new(entry.name())
+            .file_name()
+            .and_then(|value| value.to_str())
+        else {
             continue;
         };
         if name != wanted && name != binary_name {
@@ -730,7 +739,10 @@ fn confirm() -> Result<bool, SelfUpdateError> {
     io::stdout().flush()?;
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
-    return Ok(matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes"));
+    return Ok(matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ));
 }
 
 fn print_plan(config: &SelfUpdateConfig, current: &str, target: &str, asset: &str) {
@@ -800,7 +812,9 @@ fn print_help(binary_name: &str) {
     println!("Update this CLI from its GitHub Releases assets.");
     println!();
     println!("Arguments:");
-    println!("  VERSION              Target release (for example 1.2.3 or v1.2.3); default: latest");
+    println!(
+        "  VERSION              Target release (for example 1.2.3 or v1.2.3); default: latest"
+    );
     println!();
     println!("Options:");
     println!("  --interactive        Always prompt before replacing the executable");
@@ -838,10 +852,7 @@ mod tests {
 
     #[test]
     fn rejects_conflicting_interactive_modes() {
-        let result = parse_cli_args([
-            "--interactive".to_owned(),
-            "--non-interactive".to_owned(),
-        ]);
+        let result = parse_cli_args(["--interactive".to_owned(), "--non-interactive".to_owned()]);
         assert!(result.is_err());
     }
 
