@@ -17,6 +17,7 @@ mod protocol;
 mod reserved;
 #[path = "runtime_config_registry.rs"]
 mod root_config_registry;
+pub mod self_update;
 mod shutdown;
 
 pub use args::{ParsedSharedArgs, SharedArgError, parse_shared_argv};
