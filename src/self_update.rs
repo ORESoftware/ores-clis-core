@@ -556,9 +556,7 @@ fn download_asset(url: &str, destination: &Path) -> Result<(), SelfUpdateError> 
             .parse::<u64>()
             .map_err(|_| SelfUpdateError::new("release asset Content-Length is invalid"))?;
         if length > MAX_RELEASE_ASSET_BYTES {
-            return Err(SelfUpdateError::new(
-                "release asset exceeds 256 MiB limit",
-            ));
+            return Err(SelfUpdateError::new("release asset exceeds 256 MiB limit"));
         }
     }
     let mut reader = response.into_reader().take(MAX_RELEASE_ASSET_BYTES + 1);
