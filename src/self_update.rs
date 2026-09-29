@@ -743,7 +743,7 @@ fn prepare_candidate(
                     "tar archive exceeds entry-count limit",
                 ));
             }
-            let mut entry =
+            let entry =
                 entry.map_err(|error| SelfUpdateError::new(format!("read tar entry: {error}")))?;
             let path = entry
                 .path()
@@ -826,7 +826,7 @@ fn extract_zip_binary(
     let mut total = 0_u64;
 
     for index in 0..archive.len() {
-        let mut entry = archive
+        let entry = archive
             .by_index(index)
             .map_err(|error| SelfUpdateError::new(format!("read zip entry: {error}")))?;
         let path = Path::new(entry.name());
