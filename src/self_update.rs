@@ -15,6 +15,15 @@ use std::process::{Command, Stdio};
 
 const GITHUB_API: &str = "https://api.github.com";
 
+/// Integrity policy for downloaded release assets.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum VerificationPolicy {
+    /// Require a SHA-256 sidecar/manifest before candidate execution.
+    RequireSha256,
+    /// Permit a missing checksum asset while still verifying one when present.
+    PreferSha256,
+}
+
 /// Product-specific metadata needed by the shared updater.
 #[derive(Clone, Debug)]
 pub struct SelfUpdateConfig {
@@ -26,6 +35,10 @@ pub struct SelfUpdateConfig {
     pub binary_name: &'static str,
     /// Current semantic version, normally `env!("CARGO_PKG_VERSION")`.
     pub current_version: &'static str,
+    /// Integrity policy applied before any downloaded candidate is executed.
+    pub verification_policy: VerificationPolicy,
+    /// Whether this product explicitly permits the dangerous `--no-verify` override.
+    pub allow_no_verify: bool,
 }
 
 impl SelfUpdateConfig {
@@ -42,7 +55,23 @@ impl SelfUpdateConfig {
             repo_name,
             binary_name,
             current_version,
+            verification_policy: VerificationPolicy::RequireSha256,
+            allow_no_verify: false,
         };
+    }
+
+    /// Override the checksum policy for a product with a documented compatibility need.
+    #[must_use]
+    pub const fn with_verification_policy(mut self, policy: VerificationPolicy) -> Self {
+        self.verification_policy = policy;
+        self
+    }
+
+    /// Explicitly permit `--no-verify` for a product. Production CLIs should normally leave this false.
+    #[must_use]
+    pub const fn allow_unverified_updates(mut self, allow: bool) -> Self {
+        self.allow_no_verify = allow;
+        self
     }
 
     fn repository(&self) -> String {
@@ -260,6 +289,12 @@ fn execute(config: SelfUpdateConfig, args: &CliArgs) -> Result<SelfUpdateOutcome
         return Ok(SelfUpdateOutcome::DryRun { current, target });
     }
 
+    if args.no_verify && !config.allow_no_verify {
+        return Err(SelfUpdateError::new(
+            "--no-verify is disabled by this product's self-update policy",
+        ));
+    }
+
     let temp = tempfile::Builder::new()
         .prefix("ores-self-update-")
         .tempdir()
@@ -268,7 +303,12 @@ fn execute(config: SelfUpdateConfig, args: &CliArgs) -> Result<SelfUpdateOutcome
     download_asset(&asset.url, &downloaded)?;
 
     if !args.no_verify {
-        verify_checksum(&release, &asset, &downloaded, args.verify_required)?;
+        let required = args.verify_required
+            || matches!(
+                config.verification_policy,
+                VerificationPolicy::RequireSha256
+            );
+        verify_checksum(&release, &asset, &downloaded, required)?;
     }
 
     let candidate = prepare_candidate(&config, &downloaded, temp.path())?;
@@ -762,14 +802,28 @@ fn validate_candidate(path: &Path, expected_version: &str) -> Result<(), SelfUpd
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{stdout}\n{stderr}");
-    if !combined.contains(expected_version) {
+    if !version_output_matches(&combined, expected_version) {
         return Err(SelfUpdateError::new(format!(
-            "candidate version output does not contain expected version {expected_version}: {}",
-            combined.trim()
+            "candidate version output does not report expected semantic version {expected_version}"
         )));
     }
 
     return Ok(());
+}
+
+fn version_output_matches(output: &str, expected_version: &str) -> bool {
+    let Ok(expected) = semver::Version::parse(&normalize_version(expected_version)) else {
+        return false;
+    };
+    output.split_whitespace().any(|token| {
+        let token = token.trim_matches(|character: char| {
+            !character.is_ascii_alphanumeric() && !matches!(character, '.' | '-' | '+')
+        });
+        let token = token.strip_prefix('v').unwrap_or(token);
+        semver::Version::parse(token)
+            .map(|candidate| candidate == expected)
+            .unwrap_or(false)
+    })
 }
 
 fn normalize_version(value: &str) -> String {
@@ -885,9 +939,37 @@ fn print_help(binary_name: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ReleaseAsset, SelfUpdateConfig, normalize_version, parse_cli_args, parse_expected_checksum,
-        score_asset,
+        ReleaseAsset, SelfUpdateConfig, VerificationPolicy, normalize_version, parse_cli_args,
+        parse_expected_checksum, score_asset, version_output_matches,
     };
+
+    #[test]
+    fn default_config_requires_sha256_and_disallows_unverified_updates() {
+        let config = SelfUpdateConfig::new("owner", "repo", "tool", "1.0.0");
+        assert_eq!(
+            config.verification_policy,
+            VerificationPolicy::RequireSha256
+        );
+        assert!(!config.allow_no_verify);
+
+        let compatibility = config
+            .clone()
+            .with_verification_policy(VerificationPolicy::PreferSha256)
+            .allow_unverified_updates(true);
+        assert_eq!(
+            compatibility.verification_policy,
+            VerificationPolicy::PreferSha256
+        );
+        assert!(compatibility.allow_no_verify);
+    }
+
+    #[test]
+    fn candidate_version_matching_is_semver_exact_not_substring_based() {
+        assert!(version_output_matches("tool 1.2.3\n", "1.2.3"));
+        assert!(version_output_matches("tool v1.2.3 (build abc)\n", "1.2.3"));
+        assert!(!version_output_matches("tool 11.2.30\n", "1.2.3"));
+        assert!(!version_output_matches("tool version=1.2.3-dev\n", "1.2.3"));
+    }
 
     #[test]
     fn parses_version_and_non_interactive_mode() {
