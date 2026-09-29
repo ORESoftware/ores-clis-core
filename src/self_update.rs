@@ -10,7 +10,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::{self, File};
 use std::io::{self, IsTerminal, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 
 const GITHUB_API: &str = "https://api.github.com";
@@ -18,6 +18,10 @@ const GITHUB_API: &str = "https://api.github.com";
 const MAX_RELEASE_JSON_BYTES: u64 = 1024 * 1024;
 const MAX_CHECKSUM_BYTES: u64 = 256 * 1024;
 const MAX_RELEASE_ASSET_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES: usize = 4096;
+const MAX_ARCHIVE_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_ARCHIVE_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_ARCHIVE_PATH_DEPTH: usize = 32;
 
 /// Integrity policy for downloaded release assets.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -728,10 +732,64 @@ fn prepare_candidate(
         let file = File::open(downloaded)?;
         let decoder = flate2::read::GzDecoder::new(file);
         let mut archive = tar::Archive::new(decoder);
-        archive
-            .unpack(&extract_dir)
-            .map_err(|error| SelfUpdateError::new(format!("extract tar archive: {error}")))?;
-        return find_executable(&extract_dir, config.binary_name);
+        let wanted = executable_name(config.binary_name);
+        let mut total = 0_u64;
+        let mut seen = 0_usize;
+        for entry in archive
+            .entries()
+            .map_err(|error| SelfUpdateError::new(format!("read tar archive: {error}")))?
+        {
+            seen += 1;
+            if seen > MAX_ARCHIVE_ENTRIES {
+                return Err(SelfUpdateError::new("tar archive exceeds entry-count limit"));
+            }
+            let mut entry =
+                entry.map_err(|error| SelfUpdateError::new(format!("read tar entry: {error}")))?;
+            let path = entry
+                .path()
+                .map_err(|error| SelfUpdateError::new(format!("read tar entry path: {error}")))?;
+            validate_archive_path(&path)?;
+            let entry_type = entry.header().entry_type();
+            if !(entry_type.is_file() || entry_type.is_dir()) {
+                return Err(SelfUpdateError::new(
+                    "tar archive contains a non-regular entry",
+                ));
+            }
+            let size = entry
+                .header()
+                .size()
+                .map_err(|error| SelfUpdateError::new(format!("read tar entry size: {error}")))?;
+            if size > MAX_ARCHIVE_ENTRY_BYTES {
+                return Err(SelfUpdateError::new("tar entry exceeds per-entry limit"));
+            }
+            total = total
+                .checked_add(size)
+                .ok_or_else(|| SelfUpdateError::new("tar archive size overflow"))?;
+            if total > MAX_ARCHIVE_TOTAL_BYTES {
+                return Err(SelfUpdateError::new("tar archive exceeds total extracted-byte limit"));
+            }
+            if entry_type.is_dir() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if name != wanted && name != config.binary_name {
+                continue;
+            }
+            let output = extract_dir.join(&wanted);
+            let mut destination = File::create(&output)?;
+            let copied = io::copy(&mut entry.take(MAX_ARCHIVE_ENTRY_BYTES + 1), &mut destination)?;
+            if copied > MAX_ARCHIVE_ENTRY_BYTES {
+                return Err(SelfUpdateError::new("tar executable exceeds per-entry limit"));
+            }
+            destination.flush()?;
+            set_executable(&output)?;
+            return Ok(output);
+        }
+        return Err(SelfUpdateError::new(format!(
+            "tar archive does not contain {wanted}"
+        )));
     }
 
     if file_name.ends_with(".zip") {
@@ -752,19 +810,35 @@ fn extract_zip_binary(
     let file = File::open(archive_path)?;
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|error| SelfUpdateError::new(format!("open zip archive: {error}")))?;
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(SelfUpdateError::new("zip archive exceeds entry-count limit"));
+    }
     let wanted = executable_name(binary_name);
+    let mut total = 0_u64;
 
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
             .map_err(|error| SelfUpdateError::new(format!("read zip entry: {error}")))?;
+        let path = Path::new(entry.name());
+        validate_archive_path(path)?;
         if entry.is_dir() {
             continue;
         }
-        let Some(name) = Path::new(entry.name())
-            .file_name()
-            .and_then(|value| value.to_str())
-        else {
+        if entry.unix_mode().is_some_and(|mode| mode & 0o170000 == 0o120000) {
+            return Err(SelfUpdateError::new("zip archive contains a symlink"));
+        }
+        let size = entry.size();
+        if size > MAX_ARCHIVE_ENTRY_BYTES {
+            return Err(SelfUpdateError::new("zip entry exceeds per-entry limit"));
+        }
+        total = total
+            .checked_add(size)
+            .ok_or_else(|| SelfUpdateError::new("zip archive size overflow"))?;
+        if total > MAX_ARCHIVE_TOTAL_BYTES {
+            return Err(SelfUpdateError::new("zip archive exceeds total extracted-byte limit"));
+        }
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
             continue;
         };
         if name != wanted && name != binary_name {
@@ -773,7 +847,10 @@ fn extract_zip_binary(
 
         let output = extract_dir.join(&wanted);
         let mut destination = File::create(&output)?;
-        io::copy(&mut entry, &mut destination)?;
+        let copied = io::copy(&mut entry.take(MAX_ARCHIVE_ENTRY_BYTES + 1), &mut destination)?;
+        if copied > MAX_ARCHIVE_ENTRY_BYTES {
+            return Err(SelfUpdateError::new("zip executable exceeds per-entry limit"));
+        }
         destination.flush()?;
         set_executable(&output)?;
         return Ok(());
@@ -782,6 +859,33 @@ fn extract_zip_binary(
     return Err(SelfUpdateError::new(format!(
         "zip archive does not contain {wanted}"
     )));
+}
+
+fn validate_archive_path(path: &Path) -> Result<(), SelfUpdateError> {
+    if path.is_absolute() {
+        return Err(SelfUpdateError::new("archive entry path must be relative"));
+    }
+    let mut depth = 0_usize;
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => {
+                depth += 1;
+                if depth > MAX_ARCHIVE_PATH_DEPTH {
+                    return Err(SelfUpdateError::new("archive entry path is too deep"));
+                }
+            }
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(SelfUpdateError::new(
+                    "archive entry path contains traversal or absolute components",
+                ));
+            }
+        }
+    }
+    if depth == 0 {
+        return Err(SelfUpdateError::new("archive entry path is empty"));
+    }
+    return Ok(());
 }
 
 fn find_executable(root: &Path, binary_name: &str) -> Result<PathBuf, SelfUpdateError> {
