@@ -15,6 +15,10 @@ use std::process::{Command, Stdio};
 
 const GITHUB_API: &str = "https://api.github.com";
 
+const MAX_RELEASE_JSON_BYTES: u64 = 1024 * 1024;
+const MAX_CHECKSUM_BYTES: u64 = 256 * 1024;
+const MAX_RELEASE_ASSET_BYTES: u64 = 256 * 1024 * 1024;
+
 /// Integrity policy for downloaded release assets.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum VerificationPolicy {
@@ -395,7 +399,22 @@ fn get_release(url: &str) -> Result<Release, ReleaseLookupError> {
             ))));
         }
     };
-    return response.into_json::<Release>().map_err(|error| {
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(MAX_RELEASE_JSON_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            ReleaseLookupError::Other(SelfUpdateError::new(format!(
+                "read GitHub release response: {error}"
+            )))
+        })?;
+    if bytes.len() as u64 > MAX_RELEASE_JSON_BYTES {
+        return Err(ReleaseLookupError::Other(SelfUpdateError::new(
+            "GitHub release response exceeds 1 MiB limit",
+        )));
+    }
+    return serde_json::from_slice::<Release>(&bytes).map_err(|error| {
         ReleaseLookupError::Other(SelfUpdateError::new(format!(
             "decode GitHub release response: {error}"
         )))
@@ -532,11 +551,24 @@ fn download_asset(url: &str, destination: &Path) -> Result<(), SelfUpdateError> 
     let response = github_get(url, "application/octet-stream")
         .call()
         .map_err(|error| SelfUpdateError::new(format!("download release asset: {error}")))?;
-    let mut reader = response.into_reader();
+    if let Some(length) = response.header("Content-Length") {
+        let length = length
+            .parse::<u64>()
+            .map_err(|_| SelfUpdateError::new("release asset Content-Length is invalid"))?;
+        if length > MAX_RELEASE_ASSET_BYTES {
+            return Err(SelfUpdateError::new("release asset exceeds 256 MiB limit"));
+        }
+    }
+    let mut reader = response.into_reader().take(MAX_RELEASE_ASSET_BYTES + 1);
     let mut file = File::create(destination)
         .map_err(|error| SelfUpdateError::new(format!("create downloaded asset: {error}")))?;
-    io::copy(&mut reader, &mut file)
+    let copied = io::copy(&mut reader, &mut file)
         .map_err(|error| SelfUpdateError::new(format!("write downloaded asset: {error}")))?;
+    if copied > MAX_RELEASE_ASSET_BYTES {
+        return Err(SelfUpdateError::new(
+            "release asset exceeds 256 MiB streaming limit",
+        ));
+    }
     file.flush()?;
     return Ok(());
 }
@@ -561,11 +593,19 @@ fn verify_checksum(
     let response = github_get(&checksum_asset.url, "application/octet-stream")
         .call()
         .map_err(|error| SelfUpdateError::new(format!("download checksum: {error}")))?;
-    let mut text = String::new();
+    let mut bytes = Vec::new();
     response
         .into_reader()
-        .read_to_string(&mut text)
+        .take(MAX_CHECKSUM_BYTES + 1)
+        .read_to_end(&mut bytes)
         .map_err(|error| SelfUpdateError::new(format!("read checksum: {error}")))?;
+    if bytes.len() as u64 > MAX_CHECKSUM_BYTES {
+        return Err(SelfUpdateError::new(
+            "checksum response exceeds 256 KiB limit",
+        ));
+    }
+    let text = String::from_utf8(bytes)
+        .map_err(|_| SelfUpdateError::new("checksum response is not valid UTF-8"))?;
 
     let expected = parse_expected_checksum(&text, &selected.name).ok_or_else(|| {
         return SelfUpdateError::new(format!(
