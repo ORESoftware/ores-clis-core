@@ -1236,8 +1236,19 @@ mod tests {
 
     #[test]
     fn asset_names_are_single_safe_components() {
-        assert_eq!(safe_asset_name("tool-linux-x86_64.tar.gz").unwrap(), "tool-linux-x86_64.tar.gz");
-        for invalid in ["", ".", "..", "../tool", "nested/tool", "/tmp/tool", "nested\\tool"] {
+        assert_eq!(
+            safe_asset_name("tool-linux-x86_64.tar.gz").unwrap(),
+            "tool-linux-x86_64.tar.gz"
+        );
+        for invalid in [
+            "",
+            ".",
+            "..",
+            "../tool",
+            "nested/tool",
+            "/tmp/tool",
+            "nested\\tool",
+        ] {
             assert!(safe_asset_name(invalid).is_err(), "{invalid:?}");
         }
     }
