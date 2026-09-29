@@ -307,7 +307,8 @@ fn execute(config: SelfUpdateConfig, args: &CliArgs) -> Result<SelfUpdateOutcome
         .prefix("ores-self-update-")
         .tempdir()
         .map_err(|error| SelfUpdateError::new(format!("create update tempdir: {error}")))?;
-    let downloaded = temp.path().join(&asset.name);
+    let asset_name = safe_asset_name(&asset.name)?;
+    let downloaded = temp.path().join(asset_name);
     download_asset(&asset.url, &downloaded)?;
 
     if !args.no_verify {
@@ -485,6 +486,19 @@ fn select_asset(
         .collect();
     candidates.sort_by(|left, right| right.0.cmp(&left.0));
 
+    if let [first, second, ..] = candidates.as_slice()
+        && first.0 == second.0
+    {
+        return Err(SelfUpdateError::new(format!(
+            "ambiguous release assets for binary={} os={} arch={}: {} and {} have equal selection score",
+            config.binary_name,
+            env::consts::OS,
+            env::consts::ARCH,
+            first.1.name,
+            second.1.name
+        )));
+    }
+
     return candidates
         .first()
         .map(|(_, asset)| (*asset).clone())
@@ -529,6 +543,10 @@ fn score_asset(config: &SelfUpdateConfig, asset: &ReleaseAsset) -> Option<u16> {
         _ => 0,
     };
 
+    if arch_score == 0 {
+        return None;
+    }
+
     let packaging_score = if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
         8
     } else if name.ends_with(".zip") {
@@ -538,6 +556,21 @@ fn score_asset(config: &SelfUpdateConfig, asset: &ReleaseAsset) -> Option<u16> {
     };
 
     return Some(50 + os_score + arch_score + packaging_score);
+}
+
+fn safe_asset_name(name: &str) -> Result<&str, SelfUpdateError> {
+    if name.is_empty()
+        || Path::new(name).is_absolute()
+        || Path::new(name).components().count() != 1
+        || name == "."
+        || name == ".."
+        || name.contains(['/', '\\', '\0'])
+    {
+        return Err(SelfUpdateError::new(
+            "release asset name must be one safe filename component",
+        ));
+    }
+    Ok(name)
 }
 
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {
@@ -910,36 +943,58 @@ fn validate_archive_path(path: &Path) -> Result<(), SelfUpdateError> {
 fn find_executable(root: &Path, binary_name: &str) -> Result<PathBuf, SelfUpdateError> {
     let wanted = executable_name(binary_name);
     let mut stack = vec![root.to_path_buf()];
+    let mut matches = Vec::new();
 
     while let Some(directory) = stack.pop() {
         for entry in fs::read_dir(&directory)? {
             let entry = entry?;
             let path = entry.path();
-            if path.is_dir() {
+            let metadata = fs::symlink_metadata(&path)?;
+            if metadata.file_type().is_symlink() {
+                return Err(SelfUpdateError::new(
+                    "release extraction contains a symbolic link",
+                ));
+            }
+            if metadata.is_dir() {
                 stack.push(path);
                 continue;
+            }
+            if !metadata.is_file() {
+                return Err(SelfUpdateError::new(
+                    "release extraction contains a non-regular entry",
+                ));
             }
             let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
                 continue;
             };
             if name == wanted || name == binary_name {
-                set_executable(&path)?;
-                return Ok(path);
+                matches.push(path);
             }
         }
     }
 
-    return Err(SelfUpdateError::new(format!(
-        "release archive does not contain {wanted}"
-    )));
+    if matches.len() != 1 {
+        return Err(SelfUpdateError::new(format!(
+            "release archive must contain exactly one {wanted}; found {}",
+            matches.len()
+        )));
+    }
+    let candidate = matches.pop().expect("one candidate");
+    set_executable(&candidate)?;
+    Ok(candidate)
 }
 
 #[cfg(unix)]
 fn set_executable(path: &Path) -> Result<(), SelfUpdateError> {
     use std::os::unix::fs::PermissionsExt;
-    let metadata = fs::metadata(path)?;
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(SelfUpdateError::new(
+            "candidate executable must be a regular non-symlink file",
+        ));
+    }
     let mut permissions = metadata.permissions();
-    permissions.set_mode(permissions.mode() | 0o755);
+    permissions.set_mode(0o755);
     fs::set_permissions(path, permissions)?;
     return Ok(());
 }
@@ -950,6 +1005,13 @@ fn set_executable(_path: &Path) -> Result<(), SelfUpdateError> {
 }
 
 fn validate_candidate(path: &Path, expected_version: &str) -> Result<(), SelfUpdateError> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| SelfUpdateError::new(format!("inspect candidate executable: {error}")))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(SelfUpdateError::new(
+            "candidate executable must be a regular non-symlink file",
+        ));
+    }
     set_executable(path)?;
     let output = Command::new(path)
         .arg("--version")
@@ -1104,8 +1166,9 @@ fn print_help(binary_name: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ReleaseAsset, SelfUpdateConfig, VerificationPolicy, normalize_version, parse_cli_args,
-        parse_expected_checksum, score_asset, version_output_matches,
+        Release, ReleaseAsset, SelfUpdateConfig, VerificationPolicy, normalize_version,
+        parse_cli_args, parse_expected_checksum, safe_asset_name, score_asset, select_asset,
+        version_output_matches,
     };
 
     #[test]
@@ -1169,6 +1232,40 @@ mod tests {
     fn version_normalization_is_stable_for_raw_and_prefixed_versions() {
         assert_eq!(normalize_version("1.2.3"), "1.2.3");
         assert_eq!(normalize_version("v1.2.3"), "1.2.3");
+    }
+
+    #[test]
+    fn asset_names_are_single_safe_components() {
+        assert_eq!(safe_asset_name("tool-linux-x86_64.tar.gz").unwrap(), "tool-linux-x86_64.tar.gz");
+        for invalid in ["", ".", "..", "../tool", "nested/tool", "/tmp/tool", "nested\\tool"] {
+            assert!(safe_asset_name(invalid).is_err(), "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn asset_selection_rejects_equal_score_ambiguity() {
+        let config = SelfUpdateConfig::new("owner", "repo", "tool", "1.0.0");
+        let platform = match std::env::consts::OS {
+            "macos" => "darwin",
+            "linux" => "linux",
+            "windows" => "windows",
+            other => other,
+        };
+        let arch = std::env::consts::ARCH;
+        let release = Release {
+            tag_name: "v1.1.0".to_owned(),
+            assets: vec![
+                ReleaseAsset {
+                    name: format!("tool-{platform}-{arch}-a.tar.gz"),
+                    url: "https://example.invalid/a".to_owned(),
+                },
+                ReleaseAsset {
+                    name: format!("tool-{platform}-{arch}-b.tar.gz"),
+                    url: "https://example.invalid/b".to_owned(),
+                },
+            ],
+        };
+        assert!(select_asset(&config, &release).is_err());
     }
 
     #[test]
