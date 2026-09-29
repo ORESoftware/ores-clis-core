@@ -303,6 +303,12 @@ fn execute(config: SelfUpdateConfig, args: &CliArgs) -> Result<SelfUpdateOutcome
     });
 }
 
+#[derive(Debug)]
+enum ReleaseLookupError {
+    NotFound,
+    Other(SelfUpdateError),
+}
+
 fn resolve_release(
     config: &SelfUpdateConfig,
     requested: Option<&str>,
@@ -310,31 +316,50 @@ fn resolve_release(
     let repository = config.repository();
     if requested.is_none() || requested == Some("latest") {
         let url = format!("{GITHUB_API}/repos/{repository}/releases/latest");
-        return get_release(&url);
+        return get_release(&url).map_err(|error| match error {
+            ReleaseLookupError::NotFound => {
+                SelfUpdateError::new(format!("latest release does not exist for {repository}"))
+            }
+            ReleaseLookupError::Other(error) => error,
+        });
     }
 
     let version = requested.unwrap_or_default();
     let normalized = normalize_version(version);
-    let with_v = format!("{GITHUB_API}/repos/{repository}/releases/tags/v{normalized}");
-    if let Ok(release) = get_release(&with_v) {
-        return Ok(release);
+    let normalized_tag = format!("v{normalized}");
+    let with_v = format!("{GITHUB_API}/repos/{repository}/releases/tags/{normalized_tag}");
+    match get_release(&with_v) {
+        Ok(release) => return Ok(release),
+        Err(ReleaseLookupError::NotFound) => {}
+        Err(ReleaseLookupError::Other(error)) => return Err(error),
     }
 
-    let raw = format!("{GITHUB_API}/repos/{repository}/releases/tags/{version}");
-    return get_release(&raw).map_err(|error| {
-        return SelfUpdateError::new(format!(
-            "release {version} not found for {repository}: {error}"
-        ));
-    });
+    let raw_tag = version.to_owned();
+    let raw = format!("{GITHUB_API}/repos/{repository}/releases/tags/{raw_tag}");
+    return match get_release(&raw) {
+        Ok(release) => Ok(release),
+        Err(ReleaseLookupError::NotFound) => Err(SelfUpdateError::new(format!(
+            "release {normalized} does not exist for {repository} (tried {normalized_tag} and {raw_tag})"
+        ))),
+        Err(ReleaseLookupError::Other(error)) => Err(error),
+    };
 }
 
-fn get_release(url: &str) -> Result<Release, SelfUpdateError> {
-    let response = github_get(url, "application/vnd.github+json")
-        .call()
-        .map_err(|error| SelfUpdateError::new(format!("GitHub release request failed: {error}")))?;
-    return response
-        .into_json::<Release>()
-        .map_err(|error| SelfUpdateError::new(format!("decode GitHub release response: {error}")));
+fn get_release(url: &str) -> Result<Release, ReleaseLookupError> {
+    let response = match github_get(url, "application/vnd.github+json").call() {
+        Ok(response) => response,
+        Err(ureq::Error::Status(404, _)) => return Err(ReleaseLookupError::NotFound),
+        Err(error) => {
+            return Err(ReleaseLookupError::Other(SelfUpdateError::new(format!(
+                "GitHub release request failed: {error}"
+            ))));
+        }
+    };
+    return response.into_json::<Release>().map_err(|error| {
+        ReleaseLookupError::Other(SelfUpdateError::new(format!(
+            "decode GitHub release response: {error}"
+        )))
+    });
 }
 
 fn github_get(url: &str, accept: &str) -> ureq::Request {
@@ -860,7 +885,8 @@ fn print_help(binary_name: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ReleaseAsset, SelfUpdateConfig, parse_cli_args, parse_expected_checksum, score_asset,
+        ReleaseAsset, SelfUpdateConfig, normalize_version, parse_cli_args, parse_expected_checksum,
+        score_asset,
     };
 
     #[test]
@@ -890,6 +916,12 @@ mod tests {
             parsed.as_deref(),
             Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         );
+    }
+
+    #[test]
+    fn version_normalization_is_stable_for_raw_and_prefixed_versions() {
+        assert_eq!(normalize_version("1.2.3"), "1.2.3");
+        assert_eq!(normalize_version("v1.2.3"), "1.2.3");
     }
 
     #[test]
