@@ -1,0 +1,162 @@
+name: reusable Rust CLI release
+
+on:
+  workflow_call:
+    inputs:
+      binary:
+        description: Executable name without .exe
+        required: true
+        type: string
+      package:
+        description: Cargo package containing the executable
+        required: true
+        type: string
+      rust_toolchain:
+        description: Reviewed Rust toolchain used for release builds
+        required: false
+        default: "1.88.0"
+        type: string
+      manifest_path:
+        description: Cargo manifest path relative to repository root
+        required: false
+        default: "Cargo.toml"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact caller revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install reviewed Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: ${{ inputs.rust_toolchain }}
+          targets: ${{ matrix.target }}
+
+      - name: Install pinned cross compiler driver
+        if: contains(matrix.target, 'linux')
+        shell: bash
+        run: cargo install cross --locked --version 0.2.5
+
+      - name: Build locked release executable
+        shell: bash
+        env:
+          BINARY: ${{ inputs.binary }}
+          PACKAGE: ${{ inputs.package }}
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          if [[ "$TARGET" == *linux* ]]; then
+            cross build --locked --release --manifest-path "$MANIFEST_PATH" --package "$PACKAGE" --bin "$BINARY" --target "$TARGET"
+          else
+            cargo build --locked --release --manifest-path "$MANIFEST_PATH" --package "$PACKAGE" --bin "$BINARY" --target "$TARGET"
+          fi
+
+      - name: Verify native executable version
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
+        shell: bash
+        env:
+          BINARY: ${{ inputs.binary }}
+          TARGET: ${{ matrix.target }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          expected="${TAG#v}"
+          executable="target/$TARGET/release/$BINARY"
+          if [[ "$TARGET" == *windows* ]]; then
+            executable="$executable.exe"
+          fi
+          output="$($executable --version 2>&1)"
+          printf '%s\n' "$output"
+          if [[ "$TAG" == v* ]]; then
+            grep -F -- "$expected" <<<"$output"
+          fi
+
+      - name: Package executable and SHA-256 sidecar
+        shell: bash
+        env:
+          BINARY: ${{ inputs.binary }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          dir="target/$TARGET/release"
+          name="$BINARY-$TARGET"
+          mkdir -p dist
+          if [[ "$TARGET" == *windows* ]]; then
+            (cd "$dir" && 7z a "$OLDPWD/dist/$name.zip" "$BINARY.exe")
+            archive="$name.zip"
+          else
+            tar -C "$dir" -czf "dist/$name.tar.gz" "$BINARY"
+            archive="$name.tar.gz"
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd dist && sha256sum "$archive" > "$archive.sha256")
+          else
+            (cd dist && shasum -a 256 "$archive" > "$archive.sha256")
+          fi
+          test -s "dist/$archive"
+          test -s "dist/$archive.sha256"
+
+      - name: Retain release candidate artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ inputs.binary }}-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Verify all retained checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' checksums < <(find dist -type f -name '*.sha256' -print0 | sort -z)
+          test "${#checksums[@]}" -eq 5
+          for checksum in "${checksums[@]}"; do
+            directory="$(dirname "$checksum")"
+            filename="$(basename "$checksum")"
+            (cd "$directory" && sha256sum --check "$filename")
+          done
+
+      - name: Publish immutable release artifacts
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
