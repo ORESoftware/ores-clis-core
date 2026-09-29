@@ -92,7 +92,7 @@ jobs:
       - name: Format and test exact patch
         run: |
           cargo fmt --all -- --check
-          cargo test --locked self_update
+          cargo test self_update
 
       - name: Commit patch
         shell: bash
