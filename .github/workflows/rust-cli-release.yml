@@ -21,6 +21,11 @@ on:
         required: false
         default: "Cargo.toml"
         type: string
+      release_tag:
+        description: Optional explicit v-prefixed release tag for bootstrap releases
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -81,7 +86,7 @@ jobs:
         env:
           BINARY: ${{ inputs.binary }}
           TARGET: ${{ matrix.target }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           expected="${TAG#v}"
@@ -130,7 +135,7 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.release_tag, 'v')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -157,6 +162,8 @@ jobs:
       - name: Publish immutable release artifacts
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
+          tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true
