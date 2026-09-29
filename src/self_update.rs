@@ -560,9 +560,7 @@ fn download_asset(url: &str, destination: &Path) -> Result<(), SelfUpdateError> 
             .parse::<u64>()
             .map_err(|_| SelfUpdateError::new("release asset Content-Length is invalid"))?;
         if length > MAX_RELEASE_ASSET_BYTES {
-            return Err(SelfUpdateError::new(
-                "release asset exceeds 256 MiB limit",
-            ));
+            return Err(SelfUpdateError::new("release asset exceeds 256 MiB limit"));
         }
     }
     let mut reader = response.into_reader().take(MAX_RELEASE_ASSET_BYTES + 1);
@@ -741,7 +739,9 @@ fn prepare_candidate(
         {
             seen += 1;
             if seen > MAX_ARCHIVE_ENTRIES {
-                return Err(SelfUpdateError::new("tar archive exceeds entry-count limit"));
+                return Err(SelfUpdateError::new(
+                    "tar archive exceeds entry-count limit",
+                ));
             }
             let mut entry =
                 entry.map_err(|error| SelfUpdateError::new(format!("read tar entry: {error}")))?;
@@ -766,7 +766,9 @@ fn prepare_candidate(
                 .checked_add(size)
                 .ok_or_else(|| SelfUpdateError::new("tar archive size overflow"))?;
             if total > MAX_ARCHIVE_TOTAL_BYTES {
-                return Err(SelfUpdateError::new("tar archive exceeds total extracted-byte limit"));
+                return Err(SelfUpdateError::new(
+                    "tar archive exceeds total extracted-byte limit",
+                ));
             }
             if entry_type.is_dir() {
                 continue;
@@ -779,9 +781,14 @@ fn prepare_candidate(
             }
             let output = extract_dir.join(&wanted);
             let mut destination = File::create(&output)?;
-            let copied = io::copy(&mut entry.take(MAX_ARCHIVE_ENTRY_BYTES + 1), &mut destination)?;
+            let copied = io::copy(
+                &mut entry.take(MAX_ARCHIVE_ENTRY_BYTES + 1),
+                &mut destination,
+            )?;
             if copied > MAX_ARCHIVE_ENTRY_BYTES {
-                return Err(SelfUpdateError::new("tar executable exceeds per-entry limit"));
+                return Err(SelfUpdateError::new(
+                    "tar executable exceeds per-entry limit",
+                ));
             }
             destination.flush()?;
             set_executable(&output)?;
@@ -811,7 +818,9 @@ fn extract_zip_binary(
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|error| SelfUpdateError::new(format!("open zip archive: {error}")))?;
     if archive.len() > MAX_ARCHIVE_ENTRIES {
-        return Err(SelfUpdateError::new("zip archive exceeds entry-count limit"));
+        return Err(SelfUpdateError::new(
+            "zip archive exceeds entry-count limit",
+        ));
     }
     let wanted = executable_name(binary_name);
     let mut total = 0_u64;
@@ -825,7 +834,10 @@ fn extract_zip_binary(
         if entry.is_dir() {
             continue;
         }
-        if entry.unix_mode().is_some_and(|mode| mode & 0o170000 == 0o120000) {
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000)
+        {
             return Err(SelfUpdateError::new("zip archive contains a symlink"));
         }
         let size = entry.size();
@@ -836,7 +848,9 @@ fn extract_zip_binary(
             .checked_add(size)
             .ok_or_else(|| SelfUpdateError::new("zip archive size overflow"))?;
         if total > MAX_ARCHIVE_TOTAL_BYTES {
-            return Err(SelfUpdateError::new("zip archive exceeds total extracted-byte limit"));
+            return Err(SelfUpdateError::new(
+                "zip archive exceeds total extracted-byte limit",
+            ));
         }
         let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
             continue;
@@ -847,9 +861,14 @@ fn extract_zip_binary(
 
         let output = extract_dir.join(&wanted);
         let mut destination = File::create(&output)?;
-        let copied = io::copy(&mut entry.take(MAX_ARCHIVE_ENTRY_BYTES + 1), &mut destination)?;
+        let copied = io::copy(
+            &mut entry.take(MAX_ARCHIVE_ENTRY_BYTES + 1),
+            &mut destination,
+        )?;
         if copied > MAX_ARCHIVE_ENTRY_BYTES {
-            return Err(SelfUpdateError::new("zip executable exceeds per-entry limit"));
+            return Err(SelfUpdateError::new(
+                "zip executable exceeds per-entry limit",
+            ));
         }
         destination.flush()?;
         set_executable(&output)?;
