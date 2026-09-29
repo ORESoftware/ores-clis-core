@@ -15,7 +15,16 @@ name = "ores_clis_core"
 path = "src/root.rs"
 
 [dependencies]
+flate2 = "1"
+semver = "1"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+self-replace = "1.5"
+tar = "0.4"
+tempfile = "3"
+ureq = { version = "2.12", features = ["json", "tls"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4"
