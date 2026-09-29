@@ -304,7 +304,10 @@ fn execute(config: SelfUpdateConfig, args: &CliArgs) -> Result<SelfUpdateOutcome
 
     if !args.no_verify {
         let required = args.verify_required
-            || matches!(config.verification_policy, VerificationPolicy::RequireSha256);
+            || matches!(
+                config.verification_policy,
+                VerificationPolicy::RequireSha256
+            );
         verify_checksum(&release, &asset, &downloaded, required)?;
     }
 
@@ -943,7 +946,10 @@ mod tests {
     #[test]
     fn default_config_requires_sha256_and_disallows_unverified_updates() {
         let config = SelfUpdateConfig::new("owner", "repo", "tool", "1.0.0");
-        assert_eq!(config.verification_policy, VerificationPolicy::RequireSha256);
+        assert_eq!(
+            config.verification_policy,
+            VerificationPolicy::RequireSha256
+        );
         assert!(!config.allow_no_verify);
 
         let compatibility = config
