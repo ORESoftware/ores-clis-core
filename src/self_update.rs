@@ -351,14 +351,39 @@ fn github_get(url: &str, accept: &str) -> ureq::Request {
 }
 
 fn github_token() -> Option<String> {
-    return env::var("GITHUB_TOKEN")
+    if let Some(token) = env::var("GITHUB_TOKEN")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
             env::var("GH_TOKEN")
                 .ok()
                 .filter(|value| !value.trim().is_empty())
-        });
+        })
+    {
+        return Some(token);
+    }
+
+    return github_cli_token();
+}
+
+fn github_cli_token() -> Option<String> {
+    let output = Command::new("gh")
+        .args(["auth", "token"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let token = String::from_utf8(output.stdout).ok()?;
+    let token = token.trim();
+    if token.is_empty() {
+        return None;
+    }
+
+    return Some(token.to_owned());
 }
 
 fn select_asset(
@@ -829,6 +854,7 @@ fn print_help(binary_name: &str) {
     println!();
     println!("Environment:");
     println!("  GITHUB_TOKEN / GH_TOKEN   Token used for private GitHub release access");
+    println!("  gh auth token              Used automatically when env tokens are unset");
 }
 
 #[cfg(test)]
