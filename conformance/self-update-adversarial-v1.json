@@ -1,0 +1,15 @@
+{
+  "schema": "ores.clis-core.self-update-adversarial/v1",
+  "cases": [
+    {"id": "missing-checksum", "expected": {"decision": "reject", "stage": "provenance", "reason": "checksum_missing"}},
+    {"id": "checksum-mismatch", "expected": {"decision": "reject", "stage": "provenance", "reason": "checksum_mismatch"}},
+    {"id": "archive-over-limit", "expected": {"decision": "reject", "stage": "download", "reason": "archive_oversize"}},
+    {"id": "tar-path-traversal", "asset_path": "../../bin/oresc", "expected": {"decision": "reject", "stage": "extract", "reason": "unsafe_archive_path"}},
+    {"id": "tar-symlink-executable", "entry_type": "symlink", "expected": {"decision": "reject", "stage": "extract", "reason": "non_regular_executable"}},
+    {"id": "tar-hardlink-executable", "entry_type": "hardlink", "expected": {"decision": "reject", "stage": "extract", "reason": "non_regular_executable"}},
+    {"id": "duplicate-executable-candidate", "candidate_count": 2, "expected": {"decision": "reject", "stage": "select", "reason": "ambiguous_executable"}},
+    {"id": "wrong-architecture", "expected_arch": "arm64", "asset_arch": "x86_64", "expected": {"decision": "reject", "stage": "select", "reason": "architecture_mismatch"}},
+    {"id": "version-substring-only", "expected_version": "1.2.3", "reported_version": "build-for-1.2.30", "expected": {"decision": "reject", "stage": "verify", "reason": "version_identity_mismatch"}},
+    {"id": "regular-exact-asset", "entry_type": "regular", "candidate_count": 1, "checksum": "match", "architecture": "arm64", "version": "1.2.3", "expected": {"decision": "admit"}}
+  ]
+}
