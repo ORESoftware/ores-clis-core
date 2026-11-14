@@ -104,14 +104,21 @@ impl fmt::Display for SharedArgError {
                 flag,
                 value,
                 message,
-            } => write!(formatter, "invalid value `{value}` for {flag}: {message}"),
+            } => write!(
+                formatter,
+                "invalid value `{}` for {flag}: {}",
+                value.escape_debug(),
+                message.escape_debug()
+            ),
             Self::Conflict {
                 field,
                 first,
                 second,
             } => write!(
                 formatter,
-                "conflicting explicit {field} choices: `{first}` versus `{second}`"
+                "conflicting explicit {field} choices: `{}` versus `{}`",
+                first.escape_debug(),
+                second.escape_debug()
             ),
         }
     }
@@ -424,4 +431,35 @@ mod tests {
         assert_eq!(parsed.policy, CliPolicy::default());
         assert_eq!(parsed.passthrough, vec!["status"]);
     }
+
+    #[test]
+    fn invalid_value_diagnostics_escape_control_characters() {
+        let error = SharedArgError::InvalidValue {
+            flag: "--output",
+            value: "bad\n\r\u{1b}[31m".to_owned(),
+            message: "unsafe\tcontext".to_owned(),
+        };
+        let diagnostic = error.to_string();
+        assert!(!diagnostic.contains('\n'));
+        assert!(!diagnostic.contains('\r'));
+        assert!(!diagnostic.contains('\t'));
+        assert!(!diagnostic.contains('\u{1b}'));
+        assert!(diagnostic.contains(r"\n"));
+        assert!(diagnostic.contains(r"\r"));
+    }
+
+    #[test]
+    fn conflict_diagnostics_escape_control_characters() {
+        let error = SharedArgError::Conflict {
+            field: "output",
+            first: "json\ninjected".to_owned(),
+            second: "human\u{1b}[31m".to_owned(),
+        };
+        let diagnostic = error.to_string();
+        assert!(!diagnostic.contains('\n'));
+        assert!(!diagnostic.contains('\u{1b}'));
+        assert!(diagnostic.contains(r"\n"));
+    }
+
+
 }
