@@ -460,6 +460,4 @@ mod tests {
         assert!(!diagnostic.contains('\u{1b}'));
         assert!(diagnostic.contains(r"\n"));
     }
-
-
 }
