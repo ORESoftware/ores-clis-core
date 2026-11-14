@@ -10,7 +10,7 @@ Initial rollout target: Rust CLIs only. Other language adapters should consume t
 
 Consumers may use `parse_shared_argv` to extract the common policy layer before handing the remaining argv to their own parser. The shared layer supports `--color`, `--color=auto|always|never`, `--no-color`, `--!color`, `--json`, `--no-json`, `--!json`, `--output=auto|human|json`, and `--log-level=silent|quiet|error|warn|info|debug|trace`, plus the compatibility aliases `--quiet` and `--silent`.
 
-Conflicting explicit choices fail deterministically. Duplicate equivalent choices are idempotent. Unrelated argv is preserved for the consumer parser, and `--` terminates shared parsing.
+Conflicting explicit choices fail deterministically. Duplicate equivalent choices are idempotent. Invalid or conflicting argument diagnostics escape control characters before logging, preventing raw newlines or ANSI escapes from untrusted argv. Unrelated argv is preserved for the consumer parser, and `--` terminates shared parsing.
 
 ## Output and stream boundary
 
